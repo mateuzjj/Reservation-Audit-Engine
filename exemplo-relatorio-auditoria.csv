@@ -1,0 +1,11 @@
+confirmation_no,guest_name,channel,rate_code,market_code,detected_issues,suggested_action,risk_score,evidence
+1553114,Canclini Julie Helene Lucie,OTA (TA),HPPRP1,BAR,"INSTRUCTION_PAYMENT_DIRECT_NO_BILLING","Verificar se faturamento está como empresa ou direto; conferir COMPANY_NAME.",35,"RES_COMMENT=PGMTO DIRETO + EXTRAS; COMPANY_NAME=C- Hilton Honors Disc T- Tumlare Corporatio"
+1553333,Luz Amanda Miss,Direct,CMP,CMP,"MISSING_COMPANY_NAME; COMP_HOUSE_NO_COMPANY","Incluir COMPANY_NAME para reserva company house (COMP_HOUSE=C).",85,"COMP_HOUSE=C; COMPANY_NAME=vazio; GUARANTEE_CODE=CO"
+1553408,Barleben Erik Sebastian,OTA (TA),FW,CNR,"RATE_MARKET_MISMATCH; INSTRUCTION_PAYMENT_DIRECT","Conferir rate FW com mercado CNR; validar instrução PGMTO DIRETO com canal.",45,"RATE_CODE=FW; MARKET_CODE=CNR; RES_COMMENT=PGMTO DIRETO + EXTRAS"
+1552027,Costa Fraga Paraguassu Gustavo,OTA (TA),CIBMS0,CNR,"","Nenhuma ação necessária.",5,"COMPANY_NAME preenchido; GUARANTEE_CODE=CC; comentário PGMTO DIRETO consistente"
+1551677,Dos Santos Saragiotto Renato,OTA (TA),CIBMS0,CNR,"ROOM_NOT_ASSIGNED","Atribuir quarto antes do check-in (ROOM_NO vazio).",25,"ROOM_NO=vazio; DISP_ROOM_NO=vazio; ARRIVAL=02/03/26"
+1549829,Hanlon Fiona Mrs,Direct,TCSBI2,CONS,"","Nenhuma ação necessária.",0,"ORIGIN=GD; COMPANY_NAME preenchido; GUARANTEE_CODE=CC"
+1547496,Lacerda Charles,OTA (TA),HHNSRR,DISC,"MISSING_COMPANY_NAME; ZERO_RATE","Reserva DISC com tarifa 0 e COMPANY_NAME vazio; verificar se é pontos/cortesia e se empresa deve constar.",40,"EFFECTIVE_RATE_AMOUNT=0; COMPANY_NAME=vazio; MARKET_CODE=DISC"
+1633559,Luz Amanda Miss,Direct,CMP,CMP,"COMP_HOUSE_NO_COMPANY; ZERO_RATE","Incluir COMPANY_NAME; confirmar se tarifa zero é intencional (comp/cortesia).",75,"COMP_HOUSE=C; COMPANY_NAME=vazio; SHARE_AMOUNT=0"
+1553408,Barleben Erik Sebastian,OTA (TA),FW,CNR,"INSTRUCTION_PAYMENT_DIRECT","Validar instrução de pagamento direto com canal OTA.",30,"RES_COMMENT=PGMTO DIRETO + EXTRAS; TRF R$ 1487.70 + TXS"
+1553333,Luz Amanda Miss,Direct,CMP,CMP,"MISSING_COMPANY_NAME; COMP_HOUSE=C","Obrigatório preencher COMPANY_NAME para company house.",85,"COMPANY_NAME=vazio; COMP_HOUSE=C; GUARANTEE_CODE=CO"

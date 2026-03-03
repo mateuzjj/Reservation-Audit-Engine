@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: reservation-audit-engine
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: PORT
+        value: 10000

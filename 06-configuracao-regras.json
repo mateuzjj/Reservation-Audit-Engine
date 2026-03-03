@@ -1,0 +1,56 @@
+{
+  "version": "1.0",
+  "description": "Regras de auditoria para reservas (inferidas do XML RES_DETAIL)",
+  "parameters": {
+    "risk_score_weights": { "high": 30, "medium": 15, "low": 5 },
+    "max_risk_score": 100,
+    "zero_rate_tolerance_comment_keywords": ["cortesia", "comp", "pontos", "points", "reward"],
+    "payment_direct_keywords": ["PGMTO DIRETO", "PGTO DIRETO", "FATURAR DIARIAS", "FATUARAR DIARIAS", "EXTRAS PAG DIRETO", "PAGTO VIA LINK"],
+    "corporate_rate_codes": ["CMP", "CIBMS0", "CNR"],
+    "corporate_market_codes": ["CMP", "CNR"],
+    "channel_mapping": {
+      "3431187369": "Expedia Group",
+      "3424811981": "Booking.com",
+      "3415382636": "Omnibees"
+    },
+    "cst_quotable_cost_tolerance_brl": 0.01
+  },
+  "rules": [
+    {
+      "id": "R001",
+      "name": "rate_code_ausente",
+      "condition": "RATE_CODE ausente ou vazio",
+      "severity": "high",
+      "suggested_action": "Preencher código de tarifa no PMS; validar origem da reserva.",
+      "enabled": true,
+      "parameters": {}
+    },
+    {
+      "id": "R002",
+      "name": "fatura_empresa_sem_company_name",
+      "condition": "Comentário indica faturamento empresa ou COMP_HOUSE=C, e COMPANY_NAME vazio",
+      "severity": "high",
+      "suggested_action": "Incluir COMPANY_NAME para permitir faturamento correto.",
+      "enabled": true,
+      "parameters": { "require_company_if_comp_house": true }
+    },
+    {
+      "id": "R009",
+      "name": "comp_house_sem_company",
+      "condition": "COMP_HOUSE=C e COMPANY_NAME vazio",
+      "severity": "high",
+      "suggested_action": "Obrigatório preencher COMPANY_NAME para company house.",
+      "enabled": true,
+      "parameters": {}
+    },
+    {
+      "id": "R013",
+      "name": "quarto_nao_atribuido_proximo_checkin",
+      "condition": "ROOM_NO e DISP_ROOM_NO vazios e ARRIVAL dentro de N horas",
+      "severity": "medium",
+      "suggested_action": "Atribuir quarto antes do check-in.",
+      "enabled": true,
+      "parameters": { "hours_before_arrival": 48 }
+    }
+  ]
+}

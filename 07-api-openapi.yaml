@@ -1,0 +1,176 @@
+# 7. Contratos e artefatos de integração — Reservation Audit Engine
+# Especificação OpenAPI minimal: API que recebe XML e retorna relatório de auditoria.
+# Apenas contrato; não implementação.
+
+openapi: 3.0.3
+info:
+  title: Reservation Audit Engine API
+  description: API para envio de XML de reservas (RES_DETAIL) e retorno do relatório de auditoria.
+  version: 1.0.0
+
+servers:
+  - url: https://api.example.com/audit/v1
+    description: Produção
+  - url: http://localhost:8080/audit/v1
+    description: Local
+
+paths:
+  /audit:
+    post:
+      summary: Enviar XML e obter relatório de auditoria
+      description: |
+        Recebe um arquivo XML no formato RES_DETAIL (Oracle Reports) e retorna
+        o relatório de auditoria em JSON ou CSV conforme Accept.
+      operationId: runAudit
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Arquivo XML com estrutura RES_DETAIL (lista de reservas por chegada).
+          application/xml:
+            schema:
+              type: string
+              format: byte
+              description: Corpo da requisição com XML completo (alternativa a multipart).
+      parameters:
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [json, csv]
+            default: json
+          description: Formato do relatório de saída (json ou csv).
+        - name: min_risk_score
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+            default: 0
+          description: Incluir no relatório apenas reservas com risk_score >= este valor.
+        - name: include_clean
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Se true, inclui reservas sem issues (detected_issues vazio).
+      responses:
+        '200':
+          description: Relatório de auditoria gerado com sucesso.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditReport'
+            text/csv:
+              schema:
+                type: string
+                description: CSV com colunas confirmation_no, guest_name, channel, rate_code, market_code, detected_issues, suggested_action, risk_score, evidence.
+        '400':
+          description: Requisição inválida (arquivo ausente, não XML ou malformado).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_INPUT
+                message: "Arquivo não é um XML válido ou não contém elemento RES_DETAIL."
+        '413':
+          description: Payload demasiado grande.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: PAYLOAD_TOO_LARGE
+                message: "Tamanho máximo do arquivo excedido."
+        '422':
+          description: XML válido mas estrutura não reconhecida (ex.: sem G_RESERVATION).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: UNRECOGNIZED_STRUCTURE
+                message: "Nenhuma reserva (G_RESERVATION) encontrada no XML."
+        '500':
+          description: Erro interno do servidor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INTERNAL_ERROR
+                message: "Falha ao processar o arquivo."
+
+components:
+  schemas:
+    AuditReport:
+      type: object
+      required: [audit_run_id, generated_at, records]
+      properties:
+        audit_run_id:
+          type: string
+          description: Identificador único da execução da auditoria.
+        source_file:
+          type: string
+          description: Nome do arquivo enviado (quando multipart).
+        generated_at:
+          type: string
+          format: date-time
+        total_reservations:
+          type: integer
+        reservations_with_issues:
+          type: integer
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditRecord'
+    AuditRecord:
+      type: object
+      required: [confirmation_no, guest_name, channel, rate_code, market_code, detected_issues, suggested_action, risk_score]
+      properties:
+        confirmation_no:
+          type: string
+        guest_name:
+          type: string
+        channel:
+          type: string
+          enum: [Expedia Group, Booking.com, Omnibees, Direct, Unknown]
+        rate_code:
+          type: string
+        market_code:
+          type: string
+        detected_issues:
+          type: array
+          items:
+            type: string
+        suggested_action:
+          type: string
+        risk_score:
+          type: integer
+          minimum: 0
+          maximum: 100
+        evidence:
+          oneOf:
+            - type: string
+            - type: object
+          description: Valores do XML que justificam o alerta.
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          example: INVALID_INPUT
+        message:
+          type: string

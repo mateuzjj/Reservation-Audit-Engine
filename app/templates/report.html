@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Auditoria — Reservation Audit Engine</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0f1a; --bg2: #0f172a;
+      --surface: #151d2e; --surface2: #1e293b; --surface3: #334155; --surface4: #475569;
+      --accent: #3b82f6; --accent-hover: #2563eb; --accent-dim: rgba(59,130,246,.08);
+      --text: #f1f5f9; --text-muted: #94a3b8; --text-dim: #64748b;
+      --danger: #ef4444; --danger-bg: rgba(239,68,68,.1); --danger-border: rgba(239,68,68,.25);
+      --warn: #f59e0b; --warn-bg: rgba(245,158,11,.1); --warn-border: rgba(245,158,11,.25);
+      --ok: #22c55e; --ok-bg: rgba(34,197,94,.1); --ok-border: rgba(34,197,94,.25);
+      --radius: 12px; --radius-sm: 8px; --radius-xs: 6px;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --header-h: 60px;
+    }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg); color: var(--text); padding: 0; min-height: 100vh;
+      min-height: 100dvh;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* ==================== HEADER ==================== */
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--surface2);
+      padding: 0 2rem;
+      padding-top: var(--safe-top);
+      display: flex; align-items: center; justify-content: space-between;
+      height: var(--header-h);
+      /* NÃO é sticky — rola com a página para evitar sobreposição */
+    }
+    .header-left {
+      display: flex; align-items: center; gap: .75rem;
+    }
+    .header-icon {
+      width: 34px; height: 34px;
+      background: linear-gradient(135deg, var(--accent), #6366f1);
+      border-radius: 10px; display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .header-icon svg { width: 18px; height: 18px; color: #fff; }
+    .header h1 { font-size: 1.05rem; font-weight: 700; white-space: nowrap; letter-spacing: -0.01em; }
+    .header h1 span { color: var(--accent); }
+    .header-actions { display: flex; gap: .5rem; align-items: center; flex-shrink: 0; }
+    .header-actions a, .header-actions button {
+      background: var(--surface2); border: 1px solid var(--surface3);
+      color: var(--text-muted); padding: .45rem .9rem; border-radius: var(--radius-sm);
+      font-size: .8rem; cursor: pointer; text-decoration: none;
+      transition: all .15s;
+      display: flex; align-items: center; gap: .4rem;
+      min-height: 36px; font-weight: 500;
+    }
+    .header-actions a:hover, .header-actions button:hover {
+      background: var(--surface3); color: var(--text);
+    }
+    .header-actions svg { width: 15px; height: 15px; flex-shrink: 0; }
+    .header-actions .label-text { display: inline; }
+
+    /* ==================== CONTENT AREA ==================== */
+    .content {
+      max-width: 1600px; margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+
+    /* ==================== SUMMARY ==================== */
+    .summary {
+      display: grid; grid-template-columns: repeat(5, 1fr);
+      gap: .75rem; padding: 1.25rem 0;
+    }
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--surface2);
+      border-radius: var(--radius); padding: 1.15rem 1.25rem;
+      display: flex; align-items: center; gap: 1rem;
+      transition: border-color .2s, transform .15s;
+      cursor: default;
+    }
+    .stat-card:hover { border-color: var(--surface3); transform: translateY(-1px); }
+    .stat-icon {
+      width: 42px; height: 42px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .stat-icon svg { width: 20px; height: 20px; }
+    .stat-info { min-width: 0; }
+    .stat-card .number { font-size: 1.6rem; font-weight: 700; line-height: 1; letter-spacing: -0.02em; }
+    .stat-card .label { font-size: .7rem; color: var(--text-muted); margin-top: .2rem; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+
+    .stat-card.total .stat-icon { background: var(--accent-dim); color: var(--accent); }
+    .stat-card.danger .stat-icon { background: var(--danger-bg); color: var(--danger); }
+    .stat-card.danger .number { color: var(--danger); }
+    .stat-card.danger { border-color: var(--danger-border); }
+    .stat-card.warn .stat-icon { background: var(--warn-bg); color: var(--warn); }
+    .stat-card.warn .number { color: var(--warn); }
+    .stat-card.warn { border-color: var(--warn-border); }
+    .stat-card.ok .stat-icon { background: var(--ok-bg); color: var(--ok); }
+    .stat-card.ok .number { color: var(--ok); }
+    .stat-card.ok { border-color: var(--ok-border); }
+    .stat-card.issues .stat-icon { background: rgba(168,85,247,.1); color: #a855f7; }
+    .stat-card.issues .number { color: #a855f7; }
+    .stat-card.issues { border-color: rgba(168,85,247,.2); }
+
+    /* ==================== TOOLBAR ==================== */
+    .toolbar {
+      padding: 0 0 1rem;
+      display: flex; align-items: center; gap: 1rem;
+    }
+    .filter-scroll {
+      display: flex; gap: .4rem;
+      flex-shrink: 0;
+    }
+    .filter-btn {
+      background: var(--surface); border: 1px solid var(--surface2);
+      color: var(--text-muted); padding: .45rem 1rem; border-radius: 20px;
+      font-size: .8rem; cursor: pointer; transition: all .15s;
+      white-space: nowrap; font-weight: 500;
+    }
+    .filter-btn:hover { border-color: var(--accent); color: var(--text); }
+    .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+    .search-wrapper {
+      position: relative; flex: 1; max-width: 360px; margin-left: auto;
+    }
+    .search-wrapper svg {
+      position: absolute; left: .85rem; top: 50%; transform: translateY(-50%);
+      width: 16px; height: 16px; color: var(--text-dim);
+      pointer-events: none;
+    }
+    .search-box {
+      width: 100%; background: var(--surface); border: 1px solid var(--surface2);
+      color: var(--text); padding: .5rem .85rem .5rem 2.5rem; border-radius: 20px;
+      font-size: .82rem; outline: none;
+      transition: border-color .2s, background .2s;
+    }
+    .search-box:focus { border-color: var(--accent); background: var(--surface2); }
+    .search-box::placeholder { color: var(--text-dim); }
+
+    .results-count {
+      padding: 0 0 .6rem;
+      font-size: .78rem; color: var(--text-dim);
+    }
+
+    /* ==================== TABLE ==================== */
+    .table-wrapper {
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius);
+      margin-bottom: 1.5rem;
+      /* SEM overflow hidden/auto aqui — necessário para sticky do thead funcionar */
+    }
+    .table-scroll { overflow-x: auto; overflow-y: visible; }
+    table {
+      width: 100%; border-collapse: separate; border-spacing: 0;
+      font-size: .82rem;
+    }
+    thead th {
+      text-align: left; padding: .75rem .65rem; color: var(--text-dim);
+      font-weight: 600; font-size: .7rem; text-transform: uppercase;
+      letter-spacing: .05em;
+      background: var(--surface2);
+      position: sticky; top: 0; z-index: 20;
+      cursor: pointer; user-select: none; white-space: nowrap;
+      border-bottom: 2px solid var(--surface3);
+    }
+    thead th:first-child { padding-left: 1rem; }
+    thead th:last-child { padding-right: 1rem; }
+    thead th:hover { color: var(--text-muted); }
+    thead th.sortable {
+      cursor: pointer; user-select: none;
+      padding-right: 1.2rem; position: relative;
+    }
+    thead th.sortable:hover { color: var(--accent); }
+    thead th.sortable .sort-arrow {
+      position: absolute; right: .35rem; top: 50%; transform: translateY(-50%);
+      font-size: .65rem; color: var(--text-dim); opacity: 0;
+    }
+    thead th.sortable:hover .sort-arrow { opacity: .6; }
+    thead th.sortable.active .sort-arrow { opacity: 1; color: var(--accent); }
+    thead th.sortable .sort-arrow.desc::after { content: '▼'; }
+    thead th.sortable .sort-arrow.asc::after { content: '▲'; }
+
+    tbody tr.main-row {
+      border-bottom: 1px solid rgba(51,65,85,.4);
+      transition: background .12s;
+      position: relative;
+    }
+    tbody tr.main-row:hover { background: rgba(30,41,59,.6); }
+    tbody tr.main-row:nth-child(4n+1) { background: rgba(15,23,42,.3); }
+    tbody tr.main-row:nth-child(4n+1):hover { background: rgba(30,41,59,.6); }
+    tbody td {
+      padding: .7rem .65rem; vertical-align: middle; color: var(--text);
+    }
+    tbody td:first-child { padding-left: 1rem; }
+    tbody td:last-child { padding-right: 1rem; }
+
+    .row-indicator {
+      position: absolute; left: 0; top: 0; bottom: 0;
+      width: 3px; border-radius: 0 2px 2px 0;
+    }
+    tr[data-risk="high"] .row-indicator { background: var(--danger); }
+    tr[data-risk="medium"] .row-indicator { background: var(--warn); }
+
+    .conf-cell { font-weight: 600; color: var(--text); font-size: .85rem; }
+    .guest-cell { color: var(--text-muted); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .copyable-cell {
+      cursor: pointer; position: relative;
+      transition: background .15s, color .15s;
+    }
+    .copyable-cell:hover { background: var(--accent-dim); color: var(--accent); }
+    .copyable-cell:active { opacity: .9; }
+    .copyable-cell.copied { color: var(--ok); }
+    .copyable-cell.copied::after {
+      content: 'Copiado!'; position: absolute; left: 50%; top: 50%;
+      transform: translate(-50%, -50%); font-size: .7rem; font-weight: 600;
+      color: var(--ok); background: var(--surface); padding: .25rem .5rem;
+      border-radius: 4px; white-space: nowrap; pointer-events: none;
+      animation: copyFlash .4s ease;
+    }
+    @keyframes copyFlash { 0% { opacity: 0; } 50% { opacity: 1; } 100% { opacity: 0; } }
+    .date-cell { color: var(--text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .mono-cell { font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: .78rem; color: var(--text-muted); }
+    .value-cell { font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+    /* ==================== RISK SCORE ==================== */
+    .risk-pill {
+      display: inline-flex; align-items: center; gap: .4rem;
+      padding: .3rem .6rem; border-radius: 20px;
+      font-weight: 700; font-size: .78rem;
+      min-width: 56px; justify-content: center;
+    }
+    .risk-pill.danger { background: var(--danger-bg); color: var(--danger); }
+    .risk-pill.warn { background: var(--warn-bg); color: var(--warn); }
+    .risk-pill.ok { background: var(--ok-bg); color: var(--ok); }
+    .risk-pill .risk-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+    }
+    .risk-pill.danger .risk-dot { background: var(--danger); }
+    .risk-pill.warn .risk-dot { background: var(--warn); }
+    .risk-pill.ok .risk-dot { background: var(--ok); }
+
+    /* ==================== BADGES ==================== */
+    .badge {
+      display: inline-block; padding: .2rem .55rem; border-radius: var(--radius-xs);
+      font-size: .7rem; font-weight: 600; margin: .1rem .15rem .1rem 0;
+      white-space: nowrap;
+    }
+    .badge.high { background: var(--danger-bg); color: var(--danger); }
+    .badge.medium { background: var(--warn-bg); color: var(--warn); }
+    .badge.low { background: var(--ok-bg); color: var(--ok); }
+    .badge.clean { background: var(--ok-bg); color: var(--ok); }
+    .badges-cell { max-width: 220px; }
+
+    .channel-tag {
+      display: inline-block; padding: .2rem .55rem; border-radius: var(--radius-xs);
+      font-size: .7rem; font-weight: 600; background: var(--accent-dim);
+      color: var(--accent); border: 1px solid rgba(59,130,246,.15);
+    }
+
+    /* ==================== EXPAND TOGGLE ==================== */
+    .detail-toggle {
+      background: none; border: 1px solid transparent; color: var(--accent); cursor: pointer;
+      font-size: .8rem; padding: 0; width: 30px; height: 30px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: var(--radius-xs);
+      transition: all .15s;
+    }
+    .detail-toggle:hover { background: var(--accent-dim); border-color: rgba(59,130,246,.2); }
+    .detail-toggle svg {
+      width: 16px; height: 16px; transition: transform .2s;
+    }
+    .detail-toggle.open svg { transform: rotate(90deg); }
+
+    .detail-row { display: none; }
+    .detail-row.open { display: table-row; }
+    .detail-row td { padding: 0 1rem 1rem; }
+    .detail-content {
+      background: var(--bg2); padding: 1.25rem;
+      border-radius: var(--radius-sm); border: 1px solid var(--surface2);
+    }
+    .detail-content h4 {
+      font-size: .72rem; color: var(--text-dim); margin-bottom: .65rem;
+      text-transform: uppercase; letter-spacing: .06em; font-weight: 700;
+    }
+    .detail-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: .55rem 1.25rem;
+    }
+    .detail-grid .item { font-size: .82rem; display: flex; gap: .35rem; }
+    .detail-grid .item .lbl { color: var(--text-dim); flex-shrink: 0; }
+    .detail-grid .item .v { color: var(--text); font-weight: 500; }
+
+    .issues-detail { margin-top: 1rem; }
+    .issue-row {
+      display: flex; gap: .6rem; align-items: center;
+      padding: .6rem 0; border-top: 1px solid var(--surface2); font-size: .82rem;
+      flex-wrap: wrap;
+    }
+    .issue-row .action { color: var(--text-muted); flex: 1; min-width: 200px; }
+    .evidence-tag {
+      font-size: .72rem; color: var(--text-dim); font-family: 'Cascadia Code', 'Fira Code', monospace;
+      padding: .3rem .5rem; background: var(--surface); border-radius: var(--radius-xs);
+      word-break: break-all; margin-top: .25rem; display: block;
+    }
+    .comment-block {
+      margin-top: 1rem; padding: .75rem; background: var(--surface);
+      border-radius: var(--radius-xs); border-left: 3px solid var(--accent);
+    }
+    .comment-block h4 { margin-bottom: .4rem; }
+    .comment-line {
+      font-size: .8rem; padding: .25rem 0; color: var(--text-muted);
+      border-top: 1px solid rgba(51,65,85,.3);
+    }
+    .comment-line:first-of-type { border-top: none; }
+
+    /* ==================== MOBILE CARDS ==================== */
+    .mobile-cards { display: none; padding: 0 0 1.5rem; }
+
+    .m-card {
+      background: var(--surface); border: 1px solid var(--surface2);
+      border-radius: var(--radius); margin-bottom: .75rem;
+      overflow: hidden; transition: transform .1s;
+    }
+    .m-card:active { transform: scale(0.99); }
+    .m-card[data-risk="high"] { border-left: 3px solid var(--danger); }
+    .m-card[data-risk="medium"] { border-left: 3px solid var(--warn); }
+    .m-card-header {
+      padding: 1rem; display: flex; justify-content: space-between;
+      align-items: flex-start; gap: .75rem; cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .m-card-main { flex: 1; min-width: 0; }
+    .m-card-conf { font-weight: 700; font-size: .95rem; margin-bottom: .25rem; }
+    .m-card-guest { color: var(--text-muted); font-size: .82rem; }
+    .m-card-meta { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .5rem; }
+    .m-card-risk { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; }
+    .m-card-risk .score { font-size: 1.5rem; font-weight: 700; line-height: 1; }
+    .m-card-risk .score-label { font-size: .65rem; color: var(--text-dim); text-transform: uppercase; margin-top: .15rem; }
+
+    .m-card-row {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: .5rem; padding: 0 1rem .75rem; font-size: .8rem;
+    }
+    .m-card-row .field .lbl { color: var(--text-dim); font-size: .7rem; text-transform: uppercase; }
+    .m-card-row .field .val { font-weight: 500; margin-top: .1rem; }
+
+    .m-card-expand { display: none; border-top: 1px solid var(--surface2); padding: 1rem; }
+    .m-card-expand.open { display: block; }
+    .m-card-expand h4 { font-size: .75rem; color: var(--text-muted); margin-bottom: .5rem; text-transform: uppercase; letter-spacing: .03em; }
+    .m-expand-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem .75rem; }
+    .m-expand-grid .item { font-size: .78rem; }
+    .m-expand-grid .item .lbl { color: var(--text-dim); }
+    .m-expand-grid .item .v { color: var(--text); font-weight: 500; }
+
+    .m-expand-issues { margin-top: .75rem; }
+    .m-expand-issue { padding: .5rem 0; border-top: 1px solid var(--surface2); }
+    .m-expand-issue-header { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; font-size: .8rem; }
+    .m-expand-issue .action { color: var(--text-muted); font-size: .78rem; margin-top: .2rem; }
+    .m-expand-issue .evidence { font-size: .68rem; color: var(--text-dim); font-family: monospace; word-break: break-all; margin-top: .15rem; }
+
+    .m-card-comments { margin-top: .75rem; }
+    .m-card-comment { font-size: .78rem; padding: .3rem 0; border-top: 1px solid var(--surface2); color: var(--text-muted); }
+
+    .m-card-toggle-hint {
+      text-align: center; padding: .5rem;
+      font-size: .72rem; color: var(--accent);
+      border-top: 1px solid var(--surface2);
+      display: flex; align-items: center; justify-content: center; gap: .3rem;
+    }
+    .m-card-toggle-hint svg { width: 14px; height: 14px; transition: transform .2s; }
+    .m-card.expanded .m-card-toggle-hint svg { transform: rotate(180deg); }
+
+    /* ==================== FOOTER ==================== */
+    .footer {
+      text-align: center;
+      padding: 1.5rem 1rem;
+      padding-bottom: calc(1.5rem + var(--safe-bottom));
+      color: var(--text-dim); font-size: .72rem;
+    }
+
+    /* ==================== FAB ==================== */
+    .fab {
+      position: fixed; bottom: 1.5rem; right: 1.5rem;
+      bottom: calc(1.5rem + var(--safe-bottom));
+      width: 44px; height: 44px;
+      background: var(--accent); color: #fff;
+      border: none; border-radius: 50%;
+      cursor: pointer; z-index: 100;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 4px 16px rgba(59,130,246,.35);
+      opacity: 0; transform: scale(0.8); pointer-events: none;
+      transition: opacity .2s, transform .2s;
+    }
+    .fab.visible { opacity: 1; transform: scale(1); pointer-events: auto; }
+    .fab:hover { transform: scale(1.08); }
+    .fab:active { transform: scale(0.95); }
+    .fab svg { width: 20px; height: 20px; }
+
+    /* ==================== DESKTOP LARGE ==================== */
+    @media (min-width: 1400px) {
+      .content { padding: 0 2.5rem; }
+      .detail-grid { grid-template-columns: repeat(5, 1fr); }
+    }
+
+    /* ==================== RESPONSIVE ==================== */
+    @media (max-width: 1100px) {
+      .summary { grid-template-columns: repeat(3, 1fr); }
+    }
+
+    @media (max-width: 860px) {
+      .table-wrapper { display: none; }
+      .mobile-cards { display: block; }
+      .toolbar { flex-direction: column; align-items: stretch; }
+      .filter-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding-bottom: 2px; }
+      .filter-scroll::-webkit-scrollbar { display: none; }
+      .filter-btn { flex-shrink: 0; min-height: 40px; padding: .5rem 1rem; }
+      .search-wrapper { max-width: none; margin-left: 0; }
+      .search-box { min-height: 44px; border-radius: var(--radius); padding: .65rem .75rem .65rem 2.5rem; }
+      .content { padding: 0 1rem; }
+      .summary { grid-template-columns: repeat(2, 1fr); gap: .5rem; padding: 1rem 0; }
+      .results-count { padding: 0 0 .5rem; }
+    }
+
+    @media (max-width: 480px) {
+      .header { padding: 0 1rem; padding-top: var(--safe-top); height: 52px; }
+      --header-h: 52px;
+      .header-icon { width: 28px; height: 28px; border-radius: 8px; }
+      .header-icon svg { width: 14px; height: 14px; }
+      .header h1 { font-size: .88rem; }
+      .header-actions .label-text { display: none; }
+      .content { padding: 0 .75rem; }
+      .summary { padding: .75rem 0; }
+      .stat-card { padding: .75rem; gap: .6rem; }
+      .stat-icon { width: 34px; height: 34px; }
+      .stat-card .number { font-size: 1.3rem; }
+      .toolbar { padding: 0 0 .75rem; }
+      .m-expand-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 360px) {
+      .stat-card:last-child { grid-column: span 2; }
+    }
+
+    /* ==================== PRINT ==================== */
+    @media print {
+      body { background: #fff; color: #000; }
+      .header { background: #fff; border: none; }
+      .header-actions { display: none; }
+      .header-icon { display: none; }
+      .toolbar { display: none; }
+      .fab { display: none; }
+      .mobile-cards { display: none !important; }
+      .table-wrapper { display: block !important; border: 1px solid #ccc; }
+      .table-scroll { overflow: visible; }
+      thead th { position: static; background: #eee; color: #333; }
+      table { font-size: .7rem; }
+      .stat-card { border: 1px solid #ccc; background: #fff; }
+      .stat-icon { display: none; }
+      .badge, .channel-tag { border: 1px solid #ccc; }
+      .row-indicator { display: none; }
+      .content { max-width: none; padding: 0; }
+      tbody tr.main-row:nth-child(4n+1) { background: #f9f9f9; }
+      .detail-content { background: #f5f5f5; border: 1px solid #ddd; }
+      .risk-pill { border: 1px solid #ccc; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-left">
+      <div class="header-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      </div>
+      <h1>Reservation <span>Audit</span> Engine</h1>
+    </div>
+    <div class="header-actions">
+      <a href="/">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+        <span class="label-text">Novo upload</span>
+      </a>
+      <button onclick="window.print()">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+        <span class="label-text">Imprimir</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="content">
+    <!-- SUMMARY -->
+    <div class="summary">
+      <div class="stat-card total">
+        <div class="stat-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+        </div>
+        <div class="stat-info">
+          <div class="number">{{ data.summary.total }}</div>
+          <div class="label">Total reservas</div>
+        </div>
+      </div>
+      <div class="stat-card danger">
+        <div class="stat-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+        </div>
+        <div class="stat-info">
+          <div class="number">{{ data.summary.high_risk }}</div>
+          <div class="label">Risco alto</div>
+        </div>
+      </div>
+      <div class="stat-card warn">
+        <div class="stat-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </div>
+        <div class="stat-info">
+          <div class="number">{{ data.summary.medium_risk }}</div>
+          <div class="label">Risco médio</div>
+        </div>
+      </div>
+      <div class="stat-card ok">
+        <div class="stat-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </div>
+        <div class="stat-info">
+          <div class="number">{{ data.summary.clean }}</div>
+          <div class="label">Sem issues</div>
+        </div>
+      </div>
+      <div class="stat-card issues">
+        <div class="stat-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+        </div>
+        <div class="stat-info">
+          <div class="number">{{ data.summary.with_issues }}</div>
+          <div class="label">Com issues</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOOLBAR -->
+    <div class="toolbar">
+      <div class="filter-scroll">
+        <button class="filter-btn active" data-filter="all">Todas</button>
+        <button class="filter-btn" data-filter="high">Risco alto</button>
+        <button class="filter-btn" data-filter="medium">Risco médio</button>
+        <button class="filter-btn" data-filter="clean">Sem issues</button>
+      </div>
+      <div class="search-wrapper">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <input type="text" class="search-box" placeholder="Buscar confirmação ou nome..." id="searchBox">
+      </div>
+    </div>
+
+    <div class="results-count" id="resultsCount"></div>
+
+    <!-- TABLE (desktop) -->
+    <div class="table-wrapper">
+      <div class="table-scroll">
+        <table id="auditTable">
+          <thead>
+            <tr>
+              <th style="width:40px"></th>
+              <th class="sortable" data-sort-key="confirmation" title="Ordenar por confirmação">Confirmação <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="guest" title="Ordenar por hóspede">Hóspede <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="arrival" title="Ordenar por chegada">Chegada <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="departure" title="Ordenar por saída">Saída <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="room" title="Ordenar por UH">UH <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="channel" title="Ordenar por canal">Canal <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="company" title="Ordenar por empresa">Company (C-) <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="source" title="Ordenar por source">Source (T-) <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="rate" title="Ordenar por rate">Rate <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="market" title="Ordenar por market">Market <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="guarantee" title="Ordenar por garantia">Garantia <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="payment" title="Ordenar por forma de pagamento">Pagamento <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort-key="value" data-sort-numeric="1" title="Ordenar por valor">Valor <span class="sort-arrow"></span></th>
+              <th>Issues</th>
+              <th class="sortable active" data-sort-key="risk" data-sort-numeric="1" title="Ordenar por risco (padrão)" style="width:80px">Risk <span class="sort-arrow desc"></span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in data.records %}
+            <tr class="main-row"
+                data-risk="{% if r.risk_score >= 30 %}high{% elif r.risk_score > 0 %}medium{% else %}clean{% endif %}"
+                data-search="{{ r.confirmation_no }} {{ r.guest_name|lower }}"
+                data-sort-confirmation="{{ r.confirmation_no }}"
+                data-sort-guest="{{ r.guest_name|lower }}"
+                data-sort-arrival="{{ r.arrival_raw }}"
+                data-sort-departure="{{ r.departure_raw }}"
+                data-sort-room="{{ (r.room_no or '')|lower }}"
+                data-sort-channel="{{ r.channel|lower }}"
+                data-sort-company="{{ (r.company_parsed or '')|lower }}"
+                data-sort-source="{{ (r.travel_agent_source or '')|lower }}"
+                data-sort-rate="{{ (r.rate_code or '')|lower }}"
+                data-sort-market="{{ (r.market_code or '')|lower }}"
+                data-sort-guarantee="{{ (r.guarantee_code or '')|lower }}"
+                data-sort-payment="{{ (r.payment_method or '')|lower }}"
+                data-sort-value="{{ r.effective_rate }}"
+                data-sort-risk="{{ r.risk_score }}">
+              <td style="position:relative">
+                <div class="row-indicator"></div>
+                <button class="detail-toggle" data-target="detail-{{ loop.index }}">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                </button>
+              </td>
+              <td class="conf-cell copyable-cell" data-copy="{{ r.confirmation_no }}" title="Clique para copiar">{{ r.confirmation_no }}</td>
+              <td class="guest-cell copyable-cell" data-copy="{{ r.guest_name }}" title="Clique para copiar · {{ r.guest_name }}">{{ r.guest_name }}</td>
+              <td class="date-cell">{{ r.arrival_raw }}</td>
+              <td class="date-cell">{{ r.departure_raw }}</td>
+              <td class="mono-cell">{{ r.room_no or '—' }}</td>
+              <td><span class="channel-tag">{{ r.channel }}</span></td>
+              <td class="guest-cell" title="{{ r.company_parsed }}">{{ r.company_parsed or '—' }}</td>
+              <td class="guest-cell" title="{{ r.travel_agent_source }}">{{ r.travel_agent_source or '—' }}</td>
+              <td class="mono-cell">{{ r.rate_code }}</td>
+              <td class="mono-cell">{{ r.market_code }}</td>
+              <td class="mono-cell">{{ r.guarantee_code }}</td>
+              <td class="mono-cell">{{ r.payment_method }}</td>
+              <td class="value-cell">{{ r.currency }} {{ "%.2f"|format(r.effective_rate) }}</td>
+              <td class="badges-cell">
+                {% for i in r.detected_issues %}
+                <span class="badge {{ i.severity }}">{{ i.code }}</span>
+                {% endfor %}
+                {% if not r.detected_issues %}
+                <span class="badge clean">OK</span>
+                {% endif %}
+              </td>
+              <td>
+                <span class="risk-pill {% if r.risk_score >= 60 %}danger{% elif r.risk_score >= 30 %}warn{% else %}ok{% endif %}">
+                  <span class="risk-dot"></span>
+                  {{ r.risk_score }}
+                </span>
+              </td>
+            </tr>
+            <tr class="detail-row" id="detail-{{ loop.index }}">
+              <td colspan="16">
+                <div class="detail-content">
+                  <h4>Dados da reserva</h4>
+                  <div class="detail-grid">
+                    <div class="item"><span class="lbl">Confirmation:</span> <span class="v">{{ r.confirmation_no }}</span></div>
+                    <div class="item"><span class="lbl">Resv Name ID:</span> <span class="v">{{ r.resv_name_id }}</span></div>
+                    <div class="item"><span class="lbl">Status:</span> <span class="v">{{ r.status }}</span></div>
+                    <div class="item"><span class="lbl">Ext. Reference:</span> <span class="v">{{ r.external_reference or '(vazio)' }}</span></div>
+                    <div class="item"><span class="lbl">Origem:</span> <span class="v">{{ r.origin }}</span></div>
+                    <div class="item"><span class="lbl">Company (C-):</span> <span class="v">{{ r.company_parsed or '—' }}</span></div>
+                    <div class="item"><span class="lbl">Travel Agent / Source (T-):</span> <span class="v">{{ r.travel_agent_source or '—' }}</span></div>
+                    <div class="item"><span class="lbl">Comp House:</span> <span class="v">{{ r.comp_house or '—' }}</span></div>
+                    <div class="item"><span class="lbl">Room Cat.:</span> <span class="v">{{ r.room_category }}</span></div>
+                    <div class="item"><span class="lbl">Adults/Children:</span> <span class="v">{{ r.adults }} / {{ r.children }}</span></div>
+                    <div class="item"><span class="lbl">Deposit:</span> <span class="v">{{ "%.2f"|format(r.deposit_paid) }}</span></div>
+                    <div class="item"><span class="lbl">Share Amount:</span> <span class="v">{{ "%.2f"|format(r.share_amount) }}</span></div>
+                    <div class="item"><span class="lbl">Cartão:</span> <span class="v">{{ r.credit_card or '(vazio)' }}</span></div>
+                    <div class="item"><span class="lbl">Products:</span> <span class="v">{{ r.products or '—' }}</span></div>
+                    <div class="item"><span class="lbl">Special Req.:</span> <span class="v">{{ r.special_requests or '—' }}</span></div>
+                    <div class="item"><span class="lbl">Membership:</span> <span class="v">{{ r.membership_type or '—' }}</span></div>
+                  </div>
+
+                  {% if r.comments %}
+                  <div class="comment-block">
+                    <h4>Comentários da reserva</h4>
+                    {% for c in r.comments %}
+                    <div class="comment-line">{{ c }}</div>
+                    {% endfor %}
+                  </div>
+                  {% endif %}
+
+                  <div class="issues-detail">
+                    {% if r.detected_issues %}
+                    <h4>Issues detectados e ações sugeridas</h4>
+                    {% for i in r.detected_issues %}
+                    <div class="issue-row">
+                      <span class="badge {{ i.severity }}">{{ i.severity|upper }}</span>
+                      <strong>{{ i.code }}</strong>
+                      <span class="action">{{ r.suggested_actions[loop.index0] }}</span>
+                    </div>
+                    <div class="evidence-tag">
+                      {% for k, v in i.evidence.items() %}
+                      {{ k }}={{ v }}{% if not loop.last %} · {% endif %}
+                      {% endfor %}
+                    </div>
+                    {% endfor %}
+                    {% else %}
+                    <h4>Status da auditoria</h4>
+                    <div class="issue-row">
+                      <span class="badge clean">OK</span>
+                      <span class="action">Nenhum issue detectado — reserva em conformidade.</span>
+                    </div>
+                    {% endif %}
+                  </div>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- MOBILE CARDS -->
+    <div class="mobile-cards" id="mobileCards">
+      {% for r in data.records %}
+      <div class="m-card"
+           data-risk="{% if r.risk_score >= 30 %}high{% elif r.risk_score > 0 %}medium{% else %}clean{% endif %}"
+           data-search="{{ r.confirmation_no }} {{ r.guest_name|lower }}">
+        <div class="m-card-header" onclick="toggleMobileCard(this)">
+          <div class="m-card-main">
+            <div class="m-card-conf copyable-cell" data-copy="{{ r.confirmation_no }}" title="Clique para copiar">{{ r.confirmation_no }}</div>
+            <div class="m-card-guest copyable-cell" data-copy="{{ r.guest_name }}" title="Clique para copiar">{{ r.guest_name }}</div>
+            <div class="m-card-meta">
+              <span class="channel-tag">{{ r.channel }}</span>
+              {% for i in r.detected_issues %}
+              <span class="badge {{ i.severity }}">{{ i.code }}</span>
+              {% endfor %}
+              {% if not r.detected_issues %}
+              <span class="badge clean">OK</span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="m-card-risk">
+            <div class="score" style="color:{% if r.risk_score >= 60 %}var(--danger){% elif r.risk_score >= 30 %}var(--warn){% else %}var(--ok){% endif %}">{{ r.risk_score }}</div>
+            <div class="score-label">Risk</div>
+          </div>
+        </div>
+
+        <div class="m-card-row">
+          <div class="field">
+            <div class="lbl">Chegada</div>
+            <div class="val">{{ r.arrival_raw }}</div>
+          </div>
+          <div class="field">
+            <div class="lbl">Saída</div>
+            <div class="val">{{ r.departure_raw }}</div>
+          </div>
+          <div class="field">
+            <div class="lbl">UH</div>
+            <div class="val">{{ r.room_no or '—' }}</div>
+          </div>
+          <div class="field">
+            <div class="lbl">Valor</div>
+            <div class="val">{{ r.currency }} {{ "%.2f"|format(r.effective_rate) }}</div>
+          </div>
+        </div>
+
+        <div class="m-card-expand" id="m-detail-{{ loop.index }}">
+          <h4>Dados completos</h4>
+          <div class="m-expand-grid">
+            <div class="item"><span class="lbl">Rate:</span> <span class="v">{{ r.rate_code }}</span></div>
+            <div class="item"><span class="lbl">Market:</span> <span class="v">{{ r.market_code }}</span></div>
+            <div class="item"><span class="lbl">Garantia:</span> <span class="v">{{ r.guarantee_code }}</span></div>
+            <div class="item"><span class="lbl">Pagamento:</span> <span class="v">{{ r.payment_method }}</span></div>
+            <div class="item"><span class="lbl">Status:</span> <span class="v">{{ r.status }}</span></div>
+            <div class="item"><span class="lbl">Origem:</span> <span class="v">{{ r.origin }}</span></div>
+            <div class="item"><span class="lbl">Company (C-):</span> <span class="v">{{ r.company_parsed or '—' }}</span></div>
+            <div class="item"><span class="lbl">Travel Agent / Source (T-):</span> <span class="v">{{ r.travel_agent_source or '—' }}</span></div>
+            <div class="item"><span class="lbl">Room Cat.:</span> <span class="v">{{ r.room_category }}</span></div>
+            <div class="item"><span class="lbl">Adults/Children:</span> <span class="v">{{ r.adults }} / {{ r.children }}</span></div>
+            <div class="item"><span class="lbl">Deposit:</span> <span class="v">{{ "%.2f"|format(r.deposit_paid) }}</span></div>
+            <div class="item"><span class="lbl">Ext. Ref:</span> <span class="v">{{ r.external_reference or '—' }}</span></div>
+            <div class="item"><span class="lbl">Membership:</span> <span class="v">{{ r.membership_type or '—' }}</span></div>
+          </div>
+
+          {% if r.comments %}
+          <div class="m-card-comments">
+            <h4 style="margin-top:.75rem">Comentários</h4>
+            {% for c in r.comments %}
+            <div class="m-card-comment">{{ c }}</div>
+            {% endfor %}
+          </div>
+          {% endif %}
+
+          <div class="m-expand-issues">
+            <h4 style="margin-top:.75rem">{% if r.detected_issues %}Issues e ações{% else %}Status da auditoria{% endif %}</h4>
+            {% if r.detected_issues %}
+            {% for i in r.detected_issues %}
+            <div class="m-expand-issue">
+              <div class="m-expand-issue-header">
+                <span class="badge {{ i.severity }}">{{ i.severity|upper }}</span>
+                <strong>{{ i.code }}</strong>
+              </div>
+              <div class="action">{{ r.suggested_actions[loop.index0] }}</div>
+              <div class="evidence">
+                {% for k, v in i.evidence.items() %}
+                {{ k }}={{ v }}{% if not loop.last %} · {% endif %}
+                {% endfor %}
+              </div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div class="m-expand-issue">
+              <div class="m-expand-issue-header">
+                <span class="badge clean">OK</span>
+                <span>Nenhum issue detectado — reserva em conformidade.</span>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="m-card-toggle-hint" onclick="toggleMobileCard(this.parentElement.querySelector('.m-card-header'))">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+          <span class="toggle-text">Ver detalhes</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- FAB scroll to top -->
+  <button class="fab" id="fabTop" onclick="window.scrollTo({top:0,behavior:'smooth'})">
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/></svg>
+  </button>
+
+  <div class="footer">
+    Reservation Audit Engine v1.0 · {{ data.total_reservations }} reservas processadas
+  </div>
+
+  <script>
+    document.querySelectorAll('.detail-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = document.getElementById(btn.dataset.target);
+        target.classList.toggle('open');
+        btn.classList.toggle('open', target.classList.contains('open'));
+      });
+    });
+
+    function copyToClipboard(text) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text);
+      }
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        return Promise.resolve();
+      } finally {
+        document.body.removeChild(ta);
+      }
+    }
+
+    function copyCell(cell) {
+      const el = typeof cell === 'object' ? cell : document.querySelector(cell);
+      if (!el) return;
+      const text = (el.getAttribute('data-copy') || el.textContent || '').trim();
+      if (!text) return;
+      copyToClipboard(text).then(() => {
+        el.classList.add('copied');
+        setTimeout(() => el.classList.remove('copied'), 600);
+      }).catch(() => {});
+    }
+
+    document.querySelectorAll('.copyable-cell').forEach(cell => {
+      cell.addEventListener('click', (e) => {
+        e.stopPropagation();
+        copyCell(cell);
+      });
+    });
+
+    function toggleMobileCard(header) {
+      const card = header.closest('.m-card');
+      const expand = card.querySelector('.m-card-expand');
+      if (!expand) return;
+      const isOpen = expand.classList.toggle('open');
+      card.classList.toggle('expanded', isOpen);
+      const hint = card.querySelector('.toggle-text');
+      if (hint) hint.textContent = isOpen ? 'Ocultar detalhes' : 'Ver detalhes';
+    }
+
+    const filterBtns = document.querySelectorAll('.filter-btn');
+    const rows = document.querySelectorAll('.main-row');
+    const mCards = document.querySelectorAll('.m-card');
+    const resultsCount = document.getElementById('resultsCount');
+
+    function updateCount() {
+      const visibleRows = document.querySelectorAll('.main-row:not([style*="display: none"])').length;
+      const visibleCards = document.querySelectorAll('.m-card:not([style*="display: none"])').length;
+      const count = Math.max(visibleRows, visibleCards);
+      const total = rows.length || mCards.length;
+      resultsCount.textContent = count === total
+        ? total + ' reservas'
+        : count + ' de ' + total + ' reservas';
+    }
+
+    filterBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        filterBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const f = btn.dataset.filter;
+        rows.forEach(row => {
+          const show = f === 'all' || row.dataset.risk === f;
+          row.style.display = show ? '' : 'none';
+          const nextTr = row.nextElementSibling;
+          if (nextTr && nextTr.classList.contains('detail-row')) {
+            nextTr.style.display = show ? '' : 'none';
+            if (!show) nextTr.classList.remove('open');
+          }
+          const detId = row.querySelector('.detail-toggle')?.dataset.target;
+          if (detId) {
+            const det = document.getElementById(detId);
+            if (det) { det.classList.remove('open'); det.style.display = ''; }
+            row.querySelector('.detail-toggle')?.classList.remove('open');
+          }
+        });
+        mCards.forEach(card => {
+          card.style.display = (f === 'all' || card.dataset.risk === f) ? '' : 'none';
+        });
+        updateCount();
+      });
+    });
+
+    const searchBox = document.getElementById('searchBox');
+    searchBox.addEventListener('input', () => {
+      const q = searchBox.value.toLowerCase();
+      rows.forEach(row => {
+        row.style.display = row.dataset.search.includes(q) ? '' : 'none';
+      });
+      mCards.forEach(card => {
+        card.style.display = card.dataset.search.includes(q) ? '' : 'none';
+      });
+      updateCount();
+    });
+
+    const fab = document.getElementById('fabTop');
+    let ticking = false;
+    window.addEventListener('scroll', () => {
+      if (!ticking) {
+        requestAnimationFrame(() => {
+          fab.classList.toggle('visible', window.scrollY > 300);
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+
+    // Ordenação por clique no cabeçalho (padrão: risco desc)
+    let currentSortKey = 'risk';
+    let currentSortDir = 'desc';
+
+    function getSortValue(mainRow, key) {
+      const raw = mainRow.getAttribute('data-sort-' + key) || '';
+      const th = document.querySelector('th.sortable[data-sort-key="' + key + '"]');
+      if (th && th.getAttribute('data-sort-numeric') === '1') {
+        const n = parseFloat(raw);
+        return isNaN(n) ? -Infinity : n;
+      }
+      return raw.toLowerCase();
+    }
+
+    function sortTable(key) {
+      const th = document.querySelector('th.sortable[data-sort-key="' + key + '"]');
+      if (!th) return;
+      const isNumeric = th.getAttribute('data-sort-numeric') === '1';
+      if (currentSortKey === key) {
+        currentSortDir = currentSortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        currentSortKey = key;
+        currentSortDir = isNumeric ? 'desc' : 'asc';
+      }
+
+      const tbody = document.querySelector('#auditTable tbody');
+      if (!tbody) return;
+
+      const pairs = [];
+      let tr = tbody.firstElementChild;
+      while (tr) {
+        if (tr.classList.contains('main-row')) {
+          const detail = tr.nextElementSibling;
+          pairs.push({ main: tr, detail: detail && detail.classList.contains('detail-row') ? detail : null });
+          tr = detail;
+        }
+        tr = tr ? tr.nextElementSibling : null;
+      }
+
+      const mult = currentSortDir === 'asc' ? 1 : -1;
+      pairs.sort((a, b) => {
+        const va = getSortValue(a.main, currentSortKey);
+        const vb = getSortValue(b.main, currentSortKey);
+        if (isNumeric) return mult * (va - vb);
+        const c = String(va).localeCompare(String(vb), 'pt');
+        return mult * c;
+      });
+
+      pairs.forEach(p => {
+        tbody.appendChild(p.main);
+        if (p.detail) tbody.appendChild(p.detail);
+      });
+
+      document.querySelectorAll('th.sortable').forEach(h => {
+        h.classList.remove('active');
+        const arrow = h.querySelector('.sort-arrow');
+        if (arrow) { arrow.classList.remove('asc', 'desc'); arrow.removeAttribute('class'); arrow.className = 'sort-arrow'; }
+      });
+      th.classList.add('active');
+      const arrow = th.querySelector('.sort-arrow');
+      if (arrow) { arrow.className = 'sort-arrow ' + currentSortDir; }
+    }
+
+    document.querySelectorAll('th.sortable').forEach(th => {
+      th.addEventListener('click', () => sortTable(th.getAttribute('data-sort-key')));
+    });
+
+    updateCount();
+  </script>
+</body>
+</html>

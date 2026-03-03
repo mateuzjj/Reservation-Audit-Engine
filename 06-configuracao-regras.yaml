@@ -1,0 +1,186 @@
+# 6. Configuração de regras — Reservation Audit Engine
+# Template declarativo: nome da regra, condição em linguagem natural curta,
+# severidade, ação sugerida, parâmetros configuráveis.
+# Formato YAML; equivalente JSON permitido.
+
+version: "1.0"
+description: "Regras de auditoria para reservas (inferidas do XML RES_DETAIL)"
+
+# Parâmetros globais (thresholds, listas)
+parameters:
+  risk_score_weights:
+    high: 30
+    medium: 15
+    low: 5
+  max_risk_score: 100
+  zero_rate_tolerance_comment_keywords:
+    - "cortesia"
+    - "comp"
+    - "pontos"
+    - "points"
+    - "reward"
+  payment_direct_keywords:
+    - "PGMTO DIRETO"
+    - "PGTO DIRETO"
+    - "FATURAR DIARIAS"
+    - "FATUARAR DIARIAS"
+    - "EXTRAS PAG DIRETO"
+    - "PAGTO VIA LINK"
+  corporate_rate_codes:
+    - "CMP"
+    - "CIBMS0"
+    - "CNR"
+  corporate_market_codes:
+    - "CMP"
+    - "CNR"
+  bar_market_codes:
+    - "BAR"
+    - "MKT"
+  cst_quotable_cost_tolerance_brl: 0.01  # divergência máxima entre comentário CST e EFFECTIVE_RATE_AMOUNT
+
+# Mapeamento: primeiro segmento de EXTERNAL_REFERENCE → canal
+channel_mapping:
+  external_reference_prefix_to_channel:
+    "3431187369": "Expedia Group"
+    "3424811981": "Booking.com"
+    "3415382636": "Omnibees"
+    # prefixos não mapeados + ORIGIN=TA → "OTA Unknown"
+  origin_to_channel:
+    GD: "Direct"
+    TA: null  # usa external_reference_prefix_to_channel; se não encontrado → "OTA Unknown"
+
+rules:
+  - id: R001
+    name: "rate_code_ausente"
+    condition: "RATE_CODE ausente ou vazio"
+    severity: high
+    suggested_action: "Preencher código de tarifa no PMS; validar origem da reserva."
+    enabled: true
+    parameters: {}
+
+  - id: R002
+    name: "fatura_empresa_sem_company_name"
+    condition: "Comentário indica faturamento empresa (keywords) ou COMP_HOUSE=C, e COMPANY_NAME vazio"
+    severity: high
+    suggested_action: "Incluir COMPANY_NAME para permitir faturamento correto."
+    enabled: true
+    parameters:
+      keywords: ["FATURAR", "FATUARAR", "DIARIAS E TAXAS", "DEBITAR DIARIAS"]
+      require_company_if_comp_house: true
+
+  - id: R003
+    name: "ota_guarantee_incompativel"
+    condition: "Canal classificado como OTA e GUARANTEE_CODE incompatível (ex.: CO sem COMPANY_NAME)"
+    severity: high
+    suggested_action: "Ajustar garantia conforme política do canal ou preencher COMPANY_NAME."
+    enabled: true
+    parameters:
+      ota_guarantee_codes_invalid_without_company: ["CO"]
+
+  - id: R004
+    name: "external_reference_inconsistente"
+    condition: "ORIGIN_OF_BOOKING=TA e EXTERNAL_REFERENCE vazio; ou formato diferente de NNNNNNNNNN-NNNNNNNNN"
+    severity: medium
+    suggested_action: "Incluir ou corrigir EXTERNAL_REFERENCE para conciliação com canal."
+    enabled: true
+    parameters:
+      pattern: "^[0-9]{10}-[0-9]{9}$"
+
+  - id: R005
+    name: "rate_code_market_code_divergencia"
+    condition: "RATE_CODE e MARKET_CODE semanticamente incompatíveis (taxonomia)"
+    severity: medium
+    suggested_action: "Conferir tarifa e mercado no PMS; alinhar com contrato/canal."
+    enabled: true
+    parameters:
+      rate_market_pairs_invalid:
+        - { market: "BAR", rate_prefix_not_allowed: ["CI", "CMP"] }
+        - { market: "CNR", rate_prefix_not_allowed: ["HP"] }
+      # lista configurável de pares (market, rate) inválidos
+
+  - id: R006
+    name: "falta_garantia"
+    condition: "GUARANTEE_CODE vazio ou não reconhecido; reserva confirmada (CC) sem cartão/empresa quando exigido"
+    severity: high
+    suggested_action: "Incluir garantia (cartão ou empresa) conforme política."
+    enabled: true
+    parameters:
+      valid_guarantee_codes: ["CC", "CO", "CD", "WV", "6P", "CASH"]
+
+  - id: R007
+    name: "comentario_instrucao_inconsistente"
+    condition: "RES_COMMENT contém instrução de pagamento (keywords) e PAYMENT_METHOD/GUARANTEE_CODE/COMPANY_NAME não condizem"
+    severity: medium
+    suggested_action: "Alinhar instrução de comentário com campos de garantia e empresa."
+    enabled: true
+    parameters:
+      instruction_keywords: ["PGMTO DIRETO", "FATURAR", "TRF", "PAGTO VIA LINK", "DEBITAR"]
+
+  - id: R008
+    name: "corporativo_sem_company_name"
+    condition: "RATE_CODE ou MARKET_CODE em listas corporativas e COMPANY_NAME vazio"
+    severity: high
+    suggested_action: "Preencher COMPANY_NAME para reserva corporativa."
+    enabled: true
+    parameters:
+      corporate_rate_codes_ref: "corporate_rate_codes"
+      corporate_market_codes_ref: "corporate_market_codes"
+
+  - id: R009
+    name: "comp_house_sem_company"
+    condition: "COMP_HOUSE=C e COMPANY_NAME vazio"
+    severity: high
+    suggested_action: "Obrigatório preencher COMPANY_NAME para company house."
+    enabled: true
+    parameters: {}
+
+  - id: R010
+    name: "tarifa_zero_sem_justificativa"
+    condition: "EFFECTIVE_RATE_AMOUNT=0 e sem comentário/cortesia/pontos e sem COMPANY_NAME em reserva CO"
+    severity: medium
+    suggested_action: "Confirmar se tarifa zero é intencional (cortesia/comp/pontos)."
+    enabled: true
+    parameters:
+      zero_rate_justification_keywords_ref: "zero_rate_tolerance_comment_keywords"
+
+  - id: R011
+    name: "cc_sem_numero_cartao"
+    condition: "GUARANTEE_CODE=CC e CREDIT_CARD_NUMBER vazio"
+    severity: high
+    suggested_action: "Incluir número do cartão para garantia CC."
+    enabled: true
+    parameters: {}
+
+  - id: R012
+    name: "ota_sem_external_reference"
+    condition: "Canal=OTA e EXTERNAL_REFERENCE vazio"
+    severity: medium
+    suggested_action: "Incluir referência externa para conciliação."
+    enabled: true
+    parameters: {}
+
+  - id: R013
+    name: "quarto_nao_atribuido_proximo_checkin"
+    condition: "ROOM_NO e DISP_ROOM_NO vazios e ARRIVAL dentro de N horas"
+    severity: medium
+    suggested_action: "Atribuir quarto antes do check-in."
+    enabled: true
+    parameters:
+      hours_before_arrival: 48
+
+  - id: R014
+    name: "duplicidade_external_reference"
+    condition: "Mesmo EXTERNAL_REFERENCE em mais de uma reserva"
+    severity: high
+    suggested_action: "Verificar duplicidade de reserva ou erro de integração."
+    enabled: true
+    parameters: {}
+
+  - id: R015
+    name: "cst_quotable_cost_divergente"
+    condition: "Comentário contém 'CST: Quotable Cost : BRL X' e |EFFECTIVE_RATE_AMOUNT - X| > tolerância"
+    severity: medium
+    suggested_action: "Conferir tarifa com canal (CST vs PMS)."
+    enabled: true
+    parameters:
+      tolerance_brl_ref: "cst_quotable_cost_tolerance_brl"
