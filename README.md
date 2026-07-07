@@ -32,3 +32,65 @@ Produto analítico que, a partir do XML de reservas (formato RES_DETAIL / Oracle
 - **Qualidade:** use 08 para automatizar testes; use 09 e 10 para operação e para refinar regras/parâmetros.
 
 Nenhum desses artefatos prescreve a implementação em código; apenas especificam formato, conteúdo e comportamento esperado.
+Deploy no Render
+
+Configuração do serviço
+
+Runtime
+
+* Python
+
+Root Directory
+
+Deixe em branco (não configure app como Root Directory).
+
+Build Command
+
+pip install -r app/requirements.txt
+
+Start Command
+
+cd app && gunicorn --bind 0.0.0.0:$PORT app:app
+
+Motivo da configuração
+
+O projeto possui a seguinte estrutura:
+
+Reservation-Audit-Engine/
+├── app/
+│   ├── app.py
+│   ├── audit_engine.py
+│   ├── requirements.txt
+│   └── templates/
+└── ...
+
+Como o arquivo Flask (app.py) está dentro da pasta app, o Gunicorn precisa ser iniciado a partir desse diretório.
+
+Utilizar Root Directory = app juntamente com gunicorn app:app faz com que o módulo seja resolvido incorretamente, resultando no erro:
+
+gunicorn.errors.AppImportError:
+Failed to find attribute 'app' in 'app'
+
+Executando:
+
+cd app && gunicorn --bind 0.0.0.0:$PORT app:app
+
+o Gunicorn encontra corretamente o arquivo app.py e a variável WSGI:
+
+app = Flask(__name__)
+
+Deploy bem-sucedido
+
+Após aplicar essa configuração, o serviço iniciou normalmente:
+
+* Build: ✅ Sucesso
+* Gunicorn: ✅ Inicializado
+* Health Check: ✅ HTTP 200
+* Deploy: ✅ Concluído
+
+Observações
+
+* Não configure Root Directory como app.
+* Utilize app/requirements.txt durante o build.
+* O comando de inicialização deve entrar na pasta app antes de iniciar o Gunicorn.
+* Caso seja necessário fixar uma versão específica do Python, adicione um arquivo runtime.txt na raiz do projeto.
