@@ -733,7 +733,12 @@ def _generate_ready_comment(r):
     if rc in POINTS_HH_RATES or "FULL POINTS" in comments_txt.upper():
         return "RSV FULL POINTS // EXTRAS DIRETO"
 
-    # --- 2. Group/Conference ---
+    # --- 2. Reserva com depósito / balance (pagamento antecipado) ---
+    if r.get("deposit_paid", 0) > 0:
+        return (f"TARIFA NAO REEMBOLSAVEL // PAG ANTECIPADO DE DIARIAS "
+                f"// EXTRAS PAG DIRETO | TRF R$ {val_str} + TXS")
+
+    # --- 3. Group/Conference ---
     if channel == "Group/Conference" or r.get("origin") == "GC":
         tipo = "DPL" if adults >= 2 else "SGL"
         block = r.get("block_code", "")
