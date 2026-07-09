@@ -16,8 +16,11 @@ def index():
     return render_template("index.html", error=None)
 
 
-@app.route("/audit", methods=["POST"])
+@app.route("/audit", methods=["GET", "POST"])
 def audit():
+    if request.method == "GET":
+        return redirect(url_for("index"))
+
     if "file" not in request.files:
         return render_template("index.html", error="Nenhum arquivo enviado.")
 

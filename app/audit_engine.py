@@ -17,6 +17,12 @@ CORPORATE_MARKET_CODES = {"CMP", "CNR"}
 BAR_MARKET_CODES = {"BAR", "MKT"}
 WHOLESALE_MARKET_CODES = {"IT"}
 DISCOUNT_MARKET_CODES = {"DISC"}
+KNOWN_MARKET_CODES = {
+    "BAR", "CMP", "CNR", "CONS", "DISC", "IT", "LNR", "MKT",
+    "CMTG", "SMRF", "HOU", "GOV",
+}
+
+VALID_GUARANTEE_CODES = {"CC", "CO", "CD", "WV", "6P", "CASH", "CHECKED IN"}
 
 PAYMENT_DIRECT_KEYWORDS = [
     "PGMTO DIRETO", "PGTO DIRETO", "FATURAR DIARIAS",
@@ -30,8 +36,11 @@ BILLING_KEYWORDS = [
 
 RISK_WEIGHTS = {"high": 30, "medium": 15, "low": 5}
 
-# Tolerância (em BRL) para considerar comentário = valor da reserva
-COMMENT_VALUE_TOLERANCE_BRL = 0.02
+# Tolerância para comparação de valores: 5% ou R$10, o que for maior
+COMMENT_VALUE_TOLERANCE_PCT = 0.05
+COMMENT_VALUE_TOLERANCE_MIN_BRL = 10.0
+CST_TOLERANCE_PCT = 0.05
+CST_TOLERANCE_MIN_BRL = 10.0
 
 
 def _text(el, tag):
@@ -165,20 +174,28 @@ def _extract_value_from_comment(comments_text):
     return (None, None)
 
 
-def _detect_channel(origin, ext_ref, company_name, comments_text):
+def _detect_channel(origin, ext_ref, company_name, comments_text, routing_text=""):
     """Classifica canal com base nos campos disponíveis."""
+    if origin == "GC":
+        return "Group/Conference"
     if origin == "GD":
         return "Direct"
-    if not ext_ref:
-        return "Direct" if origin != "TA" else "OTA Unknown"
+    if not ext_ref and origin != "TA":
+        return "Direct"
 
-    lower_all = (company_name + " " + comments_text).lower()
-    if "expedia" in lower_all or "hotels.com" in lower_all:
+    lower_all = (company_name + " " + comments_text + " " + routing_text).lower()
+    if "expedia" in lower_all or "hotels.com" in lower_all or "amex online thc" in lower_all or "hotels com" in lower_all:
         return "Expedia Group"
-    if "booking.com" in lower_all or "booking" in lower_all:
+    if "booking.com" in lower_all or "booking com" in lower_all:
         return "Booking.com"
-    if "omnibees" in lower_all:
+    if "omnibees" in lower_all or "99 tecnologia" in lower_all:
         return "Omnibees"
+    if "hotelbeds" in lower_all or "webbeds" in lower_all or "sunhotels" in lower_all:
+        return "Wholesaler"
+    if "despegar" in lower_all:
+        return "Despegar"
+    if "ctrip" in lower_all or "agoda" in lower_all or "shanghai huacheng" in lower_all:
+        return "Asia OTA"
 
     if origin == "TA":
         return "OTA (TA)"
@@ -198,7 +215,14 @@ def _r001_rate_code_ausente(r):
     if not r["rate_code"]:
         return ("RATE_CODE_AUSENTE", "high", {"RATE_CODE": "(vazio)"})
 
+def _is_cortesia_cmp(r):
+    rc = (r["rate_code"] or "").upper()
+    mc = (r["market_code"] or "").upper()
+    return "CMP" in rc or "COMP" in rc or "CMP" in mc or "COMP" in mc
+
 def _r002_fatura_sem_company(r):
+    if _is_cortesia_cmp(r):
+        return None
     has_billing = _has_keyword(r["comments_text"], BILLING_KEYWORDS)
     if (has_billing or r["comp_house"] == "C") and not r["company_name"]:
         return ("FATURA_SEM_COMPANY_NAME", "high", {
@@ -235,10 +259,15 @@ def _r005_rate_market_divergencia(r):
         return ("RATE_MARKET_DIVERGENCIA", "medium", {"RATE_CODE": rc, "MARKET_CODE": mc})
 
 def _r006_falta_garantia(r):
-    if not r["guarantee_code"]:
+    gc = r["guarantee_code"]
+    if not gc:
         return ("GARANTIA_AUSENTE", "high", {"GUARANTEE_CODE": "(vazio)"})
+    if gc not in VALID_GUARANTEE_CODES:
+        return ("GARANTIA_DESCONHECIDA", "low", {"GUARANTEE_CODE": gc})
 
 def _r007_comentario_inconsistente(r):
+    if _is_cortesia_cmp(r):
+        return None
     has_direct = _has_keyword(r["comments_text"], PAYMENT_DIRECT_KEYWORDS)
     has_billing = _has_keyword(r["comments_text"], BILLING_KEYWORDS)
     if has_billing and not r["company_name"]:
@@ -254,6 +283,8 @@ def _r007_comentario_inconsistente(r):
         })
 
 def _r008_corporativo_sem_company(r):
+    if _is_cortesia_cmp(r):
+        return None
     is_corp = r["rate_code"] in CORPORATE_RATE_CODES or r["market_code"] in CORPORATE_MARKET_CODES
     if is_corp and not r["company_name"]:
         return ("CORPORATIVO_SEM_COMPANY", "high", {
@@ -263,6 +294,8 @@ def _r008_corporativo_sem_company(r):
         })
 
 def _r009_comp_house_sem_company(r):
+    if _is_cortesia_cmp(r):
+        return None
     if r["comp_house"] == "C" and not r["company_name"]:
         return ("COMP_HOUSE_SEM_COMPANY", "high", {
             "COMP_HOUSE": "C",
@@ -272,7 +305,14 @@ def _r009_comp_house_sem_company(r):
 def _r010_tarifa_zero(r):
     if r["effective_rate"] == 0:
         has_justification = (
-            r["market_code"] in DISCOUNT_MARKET_CODES
+            r["is_shared"]
+            or "CMP" in r["rate_code"].upper()
+            or "COMP" in r["rate_code"].upper()
+            or "HOU" in r["rate_code"].upper()
+            or "CMP" in r["market_code"].upper()
+            or "COMP" in r["market_code"].upper()
+            or "HOU" in r["market_code"].upper()
+            or r["market_code"] in DISCOUNT_MARKET_CODES
             or r["comp_house"] == "C"
             or r["membership_type"]
             or _has_keyword(r["comments_text"], ["cortesia", "comp", "pontos", "reward", "points"])
@@ -280,6 +320,7 @@ def _r010_tarifa_zero(r):
         if not has_justification:
             return ("TARIFA_ZERO_SEM_JUSTIFICATIVA", "medium", {
                 "EFFECTIVE_RATE_AMOUNT": "0",
+                "RATE_CODE": r["rate_code"],
                 "MARKET_CODE": r["market_code"],
             })
 
@@ -304,10 +345,20 @@ def _r015_cst_divergente(r):
             cst_val = float(match.group(1).replace(",", ""))
         except ValueError:
             return None
-        if abs(cst_val - r["effective_rate"]) > 0.01 and cst_val > 0:
+        if cst_val <= 0:
+            return None
+        # CST é custo total da estadia — comparar com SHARE_AMOUNT primeiro
+        ref_val = r["share_amount"] if r["share_amount"] > 0 else r["effective_rate"]
+        if ref_val <= 0:
+            return None
+        diff = abs(cst_val - ref_val)
+        tolerance = max(CST_TOLERANCE_MIN_BRL, ref_val * CST_TOLERANCE_PCT)
+        if diff > tolerance:
             return ("CST_DIVERGENTE", "medium", {
-                "CST_Quotable_Cost": str(cst_val),
-                "EFFECTIVE_RATE_AMOUNT": str(r["effective_rate"]),
+                "CST_Quotable_Cost": f"{cst_val:.2f}",
+                "SHARE_AMOUNT": f"{r['share_amount']:.2f}",
+                "EFFECTIVE_RATE_AMOUNT": f"{r['effective_rate']:.2f}",
+                "diferenca_BRL": f"{diff:.2f}",
             })
 
 def _r016_payment_method_vs_guarantee(r):
@@ -327,24 +378,116 @@ def _r016_payment_method_vs_guarantee(r):
 def _r017_comentario_valor_diverge_reserva(r):
     """
     Verifica se o valor citado no comentário (TRF R$ X, DIARIA: R$ X, etc.)
-    corresponde ao valor da reserva (EFFECTIVE_RATE_AMOUNT / SHARE_AMOUNT em BRL).
+    corresponde ao valor da reserva. Compara com SHARE_AMOUNT (total estadia)
+    primeiro, depois com EFFECTIVE_RATE_AMOUNT (diária).
     """
     comment_val, comment_raw = _extract_value_from_comment(r["comments_text"])
-    if comment_val is None:
+    if comment_val is None or comment_val <= 0:
         return None
-    # Valor de referência da reserva (BRL)
-    res_val = r["effective_rate"] if r["effective_rate"] else r["share_amount"]
-    if res_val is None or res_val == 0:
+    # Comparar com SHARE_AMOUNT primeiro (TRF geralmente é valor total)
+    share = r["share_amount"]
+    rate = r["effective_rate"]
+    if share > 0:
+        diff_share = abs(comment_val - share)
+        tol_share = max(COMMENT_VALUE_TOLERANCE_MIN_BRL, share * COMMENT_VALUE_TOLERANCE_PCT)
+        if diff_share <= tol_share:
+            return None  # Confere com share_amount
+    if rate > 0:
+        diff_rate = abs(comment_val - rate)
+        tol_rate = max(COMMENT_VALUE_TOLERANCE_MIN_BRL, rate * COMMENT_VALUE_TOLERANCE_PCT)
+        if diff_rate <= tol_rate:
+            return None  # Confere com effective_rate
+    # Não confere com nenhum
+    ref_val = share if share > 0 else rate
+    if ref_val <= 0:
         return None
-    diff = abs(comment_val - res_val)
-    if diff > COMMENT_VALUE_TOLERANCE_BRL:
-        return ("COMENTARIO_VALOR_DIVERGE", "medium", {
-            "valor_no_comentario": comment_raw,
-            "valor_comentario_BRL": f"{comment_val:.2f}",
-            "EFFECTIVE_RATE_AMOUNT": f"{r['effective_rate']:.2f}",
-            "SHARE_AMOUNT": f"{r['share_amount']:.2f}",
-            "diferenca_BRL": f"{diff:.2f}",
+    diff = min(
+        abs(comment_val - share) if share > 0 else float('inf'),
+        abs(comment_val - rate) if rate > 0 else float('inf'),
+    )
+    return ("COMENTARIO_VALOR_DIVERGE", "medium", {
+        "valor_no_comentario": comment_raw,
+        "valor_comentario_BRL": f"{comment_val:.2f}",
+        "SHARE_AMOUNT": f"{share:.2f}",
+        "EFFECTIVE_RATE_AMOUNT": f"{rate:.2f}",
+        "diferenca_BRL": f"{diff:.2f}",
+    })
+
+def _r012_ota_sem_ext_ref(r):
+    if r["channel"] in ("OTA (TA)", "Expedia Group", "Booking.com", "Omnibees",
+                         "Wholesaler", "Despegar", "Asia OTA") and not r["external_reference"]:
+        return ("OTA_SEM_EXT_REF", "medium", {
+            "channel": r["channel"],
+            "EXTERNAL_REFERENCE": "(vazio)",
         })
+
+def _r018_cartao_expirado(r):
+    is_cc_guarantee = r["guarantee_code"] == "CC" or r["payment_method"] in ("VS", "MC", "AX", "DC", "VI", "CA", "AE")
+    if r["exp_date"] == "EXP" or (is_cc_guarantee and not r["exp_date"] and r["credit_card"]):
+        return ("CARTAO_VALIDADE_PENDENTE", "medium", {
+            "EXP_DATE": r["exp_date"] or "(vazio/ausente)",
+            "PAYMENT_METHOD": r["payment_method"],
+            "CREDIT_CARD_NUMBER": r["credit_card"] or "(vazio)",
+        })
+
+def _r019_market_code_ausente(r):
+    if not r["market_code"]:
+        return ("MARKET_CODE_AUSENTE", "medium", {"MARKET_CODE": "(vazio)"})
+
+def _r020_datas_invalidas(r):
+    arr = r["arrival_dt"]
+    dep = r["departure_dt"]
+    if arr is None and r["arrival_raw"]:
+        return ("DATA_ARRIVAL_INVALIDA", "high", {"ARRIVAL": r["arrival_raw"]})
+    if dep is None and r["departure_raw"]:
+        return ("DATA_DEPARTURE_INVALIDA", "high", {"DEPARTURE": r["departure_raw"]})
+    if arr and dep and dep < arr:
+        return ("DEPARTURE_ANTES_ARRIVAL", "high", {
+            "ARRIVAL": r["arrival_raw"],
+            "DEPARTURE": r["departure_raw"],
+        })
+
+def _r022_multiplos_trf_divergentes(r):
+    trfs = re.findall(r"TRF R\$\s*([\d.,]+)", r["comments_text"])
+    if len(trfs) > 1:
+        vals = set()
+        for raw in trfs:
+            v = _parse_brl_from_text(raw)
+            if v is not None:
+                vals.add(round(v, 2))
+        if len(vals) > 1:
+            return ("MULTIPLOS_TRF_DIVERGENTES", "medium", {
+                "valores_TRF": ", ".join(f"R${v:.2f}" for v in sorted(vals)),
+                "quantidade": str(len(vals)),
+            })
+
+def _r024_rate_share_divergencia(r):
+    rate = r["effective_rate"]
+    share = r["share_amount"]
+    if rate > 0 and share > 0:
+        diff = abs(rate - share)
+        tol = max(10.0, rate * 0.05)
+        if diff > tol:
+            return ("RATE_SHARE_DIVERGENCIA", "medium", {
+                "EFFECTIVE_RATE_AMOUNT": f"{rate:.2f}",
+                "SHARE_AMOUNT": f"{share:.2f}",
+                "diferenca": f"{diff:.2f}",
+            })
+
+def _r025_booking_sem_comentario_cobranca(r):
+    if r["channel"] == "Booking.com" and r["deposit_paid"] == 0:
+        has_charging = (
+            re.search(r"TRF\s*(?:R\$\s*)?[\d.,]+", r["comments_text"], re.IGNORECASE)
+            or re.search(r"DIARIA:\s*R\$\s*[\d.,]+", r["comments_text"], re.IGNORECASE)
+            or re.search(r"PGMTO\s+DIRETO|PAGTO\s+DIRETO|PGTO\s+DIRETO", r["comments_text"], re.IGNORECASE)
+        )
+        if not has_charging:
+            return ("BOOKING_SEM_COMENTARIO_COBRANCA", "medium", {
+                "channel": "Booking.com",
+                "DEPOSIT_PAID": "0.00",
+                "SHARE_AMOUNT": f"{r['share_amount']:.2f}",
+                "CREDIT_CARD_NUMBER": r["credit_card"] or "(vazio)",
+            })
 
 ALL_RULES = [
     _r001_rate_code_ausente,
@@ -358,10 +501,17 @@ ALL_RULES = [
     _r009_comp_house_sem_company,
     _r010_tarifa_zero,
     _r011_cc_sem_cartao,
+    _r012_ota_sem_ext_ref,
     _r013_quarto_nao_atribuido,
     _r015_cst_divergente,
     _r016_payment_method_vs_guarantee,
     _r017_comentario_valor_diverge_reserva,
+    _r018_cartao_expirado,
+    _r019_market_code_ausente,
+    _r020_datas_invalidas,
+    _r022_multiplos_trf_divergentes,
+    _r024_rate_share_divergencia,
+    _r025_booking_sem_comentario_cobranca,
 ]
 
 
@@ -395,6 +545,13 @@ def parse_and_audit(xml_content, target_date=None):
     for resv in root.iter("G_RESERVATION"):
         arrival_raw = _text(resv, "ARRIVAL")
         arrival_dt = _parse_date(arrival_raw)
+        departure_raw = _text(resv, "DEPARTURE")
+        departure_dt = _parse_date(departure_raw)
+
+        # Calcular número de noites
+        num_nights = 0
+        if arrival_dt and departure_dt and departure_dt > arrival_dt:
+            num_nights = (departure_dt - arrival_dt).days
 
         comments = _get_comments(resv)
         comments_text = " | ".join(comments)
@@ -404,12 +561,22 @@ def parse_and_audit(xml_content, target_date=None):
             membership_type = _text(mem, "MEMBERSHIP_TYPE")
             break
 
+        # Routing info (LIST_G_BILL_RESV)
+        routing_parts = []
+        for bill in resv.iter("G_BILL_RESV"):
+            trx = _text(bill, "TRX_STRING")
+            if trx:
+                routing_parts.append(trx)
+        routing_text = " | ".join(routing_parts)
+
         r = {
             "confirmation_no": _text(resv, "CONFIRMATION_NO"),
             "guest_name": _text(resv, "FULL_NAME"),
             "arrival_raw": arrival_raw,
             "arrival_dt": arrival_dt,
-            "departure_raw": _text(resv, "DEPARTURE"),
+            "departure_raw": departure_raw,
+            "departure_dt": departure_dt,
+            "num_nights": num_nights,
             "room_no": _text(resv, "ROOM_NO") or _text(resv, "DISP_ROOM_NO"),
             "room_category": _text(resv, "ROOM_CATEGORY_LABEL"),
             "rate_code": _text(resv, "RATE_CODE"),
@@ -417,6 +584,7 @@ def parse_and_audit(xml_content, target_date=None):
             "guarantee_code": _text(resv, "GUARANTEE_CODE"),
             "payment_method": _text(resv, "PAYMENT_METHOD"),
             "credit_card": _text(resv, "CREDIT_CARD_NUMBER"),
+            "exp_date": _text(resv, "EXP_DATE"),
             "company_name": _text(resv, "COMPANY_NAME"),
             "company_parsed": _parse_company_name(_text(resv, "COMPANY_NAME"))[0],
             "travel_agent_source": _parse_company_name(_text(resv, "COMPANY_NAME"))[1],
@@ -438,16 +606,24 @@ def parse_and_audit(xml_content, target_date=None):
             "count_res_comments": _int_val(resv, "COUNT_RES_COMMENTS"),
             "vip": _text(resv, "VIP"),
             "resv_name_id": _text(resv, "RESV_NAME_ID"),
+            "is_shared": _text(resv, "IS_SHARED_YN") == "Y",
+            "block_code": _text(resv, "BLOCK_CODE"),
+            "group_id": _text(resv, "GROUP_ID"),
+            "routing_text": routing_text,
         }
 
         r["channel"] = _detect_channel(
             r["origin"], r["external_reference"],
-            r["company_name"], comments_text,
+            r["company_name"], comments_text, routing_text,
         )
 
-        # Rastrear external_reference para duplicidade
+        # Rastrear external_reference para duplicidade (com info de sharer)
         if r["external_reference"]:
-            ext_ref_map.setdefault(r["external_reference"], []).append(r["confirmation_no"])
+            ext_ref_map.setdefault(r["external_reference"], []).append({
+                "conf": r["confirmation_no"],
+                "is_shared": r["is_shared"],
+                "room_no": r["room_no"],
+            })
 
         # Aplicar regras
         issues = []
@@ -465,32 +641,43 @@ def parse_and_audit(xml_content, target_date=None):
 
         actions = []
         for i in issues:
-            actions.append(_suggested_action(i["code"]))
+            actions.append(_suggested_action(i["code"], r))
 
         r["detected_issues"] = issues
         r["risk_score"] = risk_score
         r["suggested_actions"] = actions
+        r["suggested_opera_comment"] = _generate_ready_comment(r)
         r["issue_codes"] = [i["code"] for i in issues]
 
         all_records.append(r)
 
-    # Regra de duplicidade (R014) — pós-processamento
-    dup_refs = {ref: confs for ref, confs in ext_ref_map.items() if len(confs) > 1}
+    # Regra de duplicidade (R014) — pós-processamento com filtro de sharers
+    dup_refs = {ref: entries for ref, entries in ext_ref_map.items() if len(entries) > 1}
     for rec in all_records:
         if rec["external_reference"] in dup_refs:
-            others = [c for c in dup_refs[rec["external_reference"]] if c != rec["confirmation_no"]]
+            entries = dup_refs[rec["external_reference"]]
+            others = [e["conf"] for e in entries if e["conf"] != rec["confirmation_no"]]
+            if not others:
+                continue
+            # Verificar se todos são sharers (IS_SHARED_YN ou mesmo quarto)
+            all_shared = all(e["is_shared"] for e in entries)
+            same_room = len(set(e["room_no"] for e in entries if e["room_no"])) <= 1
+            if all_shared or same_room:
+                continue  # Sharers legítimos — não são duplicidades!
+            severity = "high"
             issue = {
                 "code": "DUPLICIDADE_EXT_REF",
-                "severity": "high",
+                "severity": severity,
                 "evidence": {
                     "EXTERNAL_REFERENCE": rec["external_reference"],
                     "outras_confirmacoes": ", ".join(others),
+                    "sharers": "sim" if (all_shared or same_room) else "não",
                 },
             }
             rec["detected_issues"].append(issue)
             rec["issue_codes"].append("DUPLICIDADE_EXT_REF")
-            rec["suggested_actions"].append(_suggested_action("DUPLICIDADE_EXT_REF"))
-            rec["risk_score"] = min(100, rec["risk_score"] + RISK_WEIGHTS["high"])
+            rec["suggested_actions"].append(_suggested_action("DUPLICIDADE_EXT_REF", rec))
+            rec["risk_score"] = min(100, rec["risk_score"] + RISK_WEIGHTS[severity])
 
     # Ordenar por risk_score desc
     all_records.sort(key=lambda x: (-x["risk_score"], x["confirmation_no"]))
@@ -515,7 +702,67 @@ def parse_and_audit(xml_content, target_date=None):
     }
 
 
-def _suggested_action(code):
+def _generate_ready_comment(r):
+    """
+    Gera o texto de comentário sugerido pronto para colar no Opera PMS
+    com base no canal, valor da estadia e histórico de reservas.
+    """
+    if not r:
+        return ""
+    val = r["share_amount"] if r.get("share_amount", 0) > 0 else r.get("effective_rate", 0)
+    val_str = f"{val:,.2f}"
+    channel = r.get("channel", "")
+    comp = r.get("company_name", "")
+    comments_txt = r.get("comments_text", "")
+
+    if channel == "Booking.com":
+        has_non_refundable = any(k in comments_txt.upper() for k in ["REEMBOLSAVEL", "ANTECIPADO", "NON REF"])
+        if has_non_refundable:
+            return f"TARIFA NAO REEMBOLSAVEL // PAG ANTECIPADO DE DIARIAS // EXTRAS PAG DIRETO | TRF R$ {val_str} + TXS"
+        return f"PGMTO DIRETO + EXTRAS | TRF R$ {val_str} + TXS"
+
+    if channel in ("Expedia Group", "OTA (TA)", "Omnibees"):
+        return f"TARIFA CONF // FATURAR DIARIAS + TAXAS // EXTRAS PAG DIRETO | TRF R$ {val_str} + TXS"
+
+    if comp and (r.get("comp_house") == "C" or any(k in comments_txt.upper() for k in ["FATURAR", "FATUARAR"])):
+        return f"FATURAR DIARIAS E TAXAS PARA {comp} // EXTRAS DIRETO"
+
+    if val > 0:
+        return f"PGMTO DIRETO + EXTRAS | TRF R$ {val_str} + TXS"
+
+    return ""
+
+
+def _suggested_action(code, r=None):
+    val = 0.0
+    val_str = "0.00"
+    if r:
+        val = r["share_amount"] if r.get("share_amount", 0) > 0 else r.get("effective_rate", 0)
+        val_str = f"{val:,.2f}"
+
+    if code == "BOOKING_SEM_COMENTARIO_COBRANCA":
+        return f"Inserir nos comentários do Opera: PGMTO DIRETO + EXTRAS | TRF R$ {val_str} + TXS"
+    if code == "COMENTARIO_VALOR_DIVERGE":
+        return f"Ajustar comentário de cobrança no Opera para o valor da estadia: TRF R$ {val_str} + TXS"
+    if code == "CST_DIVERGENTE":
+        return f"CST difere da estadia (R$ {val_str}). Conferir e ajustar comentário no Opera: TRF R$ {val_str} + TXS"
+    if code == "INSTRUCAO_FATURAR_SEM_COMPANY":
+        return "Vincular COMPANY_NAME no Opera e ajustar comentário: FATURAR DIARIAS E TAXAS PARA [EMPRESA] // EXTRAS DIRETO"
+    if code == "FATURA_SEM_COMPANY_NAME":
+        return "Vincular COMPANY_NAME no Opera para faturamento da estadia."
+    if code == "OTA_GUARANTEE_INCOMPATIVEL":
+        channel = r.get("channel", "OTA") if r else "OTA"
+        return f"Canal {channel}: ajustar garantia no Opera conforme voucher e política de cobrança."
+    if code == "RATE_CODE_AUSENTE":
+        return "Preencher código de tarifa (RATE_CODE) no Opera PMS."
+    if code == "GARANTIA_AUSENTE":
+        return "Preencher código de garantia (GUARANTEE_CODE) no Opera PMS."
+    if code in ("CARTAO_EXPIRADO", "CARTAO_VALIDADE_PENDENTE"):
+        return "Validade do cartão ausente ou constando como EXP; conferir e inserir validade (MM/AA) no Opera PMS."
+    if code == "DUPLICIDADE_EXT_REF":
+        ref = r.get("external_reference", "") if r else ""
+        return f"Referência externa {ref} duplicada em outra reserva; conferir duplicidade no PMS."
+
     ACTIONS = {
         "RATE_CODE_AUSENTE": "Preencher RATE_CODE no PMS.",
         "FATURA_SEM_COMPANY_NAME": "Incluir COMPANY_NAME para faturamento.",
@@ -524,17 +771,28 @@ def _suggested_action(code):
         "EXT_REF_FORMATO_INVALIDO": "Corrigir formato de EXTERNAL_REFERENCE.",
         "RATE_MARKET_DIVERGENCIA": "Conferir RATE_CODE vs MARKET_CODE.",
         "GARANTIA_AUSENTE": "Incluir código de garantia.",
+        "GARANTIA_DESCONHECIDA": "Código de garantia não reconhecido; verificar.",
         "INSTRUCAO_FATURAR_SEM_COMPANY": "Comentário indica faturar empresa mas COMPANY_NAME está vazio.",
         "PGTO_DIRETO_CO_SEM_COMPANY": "Garantia CO com pagamento direto sem empresa.",
         "CORPORATIVO_SEM_COMPANY": "Reserva corporativa sem COMPANY_NAME.",
         "COMP_HOUSE_SEM_COMPANY": "Company house (C) sem COMPANY_NAME.",
         "TARIFA_ZERO_SEM_JUSTIFICATIVA": "Tarifa zero sem justificativa; verificar.",
         "CC_SEM_NUMERO_CARTAO": "Garantia CC sem número de cartão.",
+        "OTA_SEM_EXT_REF": "Reserva OTA sem referência externa; incluir para conciliação.",
         "QUARTO_NAO_ATRIBUIDO": "Atribuir quarto antes do check-in.",
-        "CST_DIVERGENTE": "CST Quotable Cost diverge de EFFECTIVE_RATE.",
+        "CST_DIVERGENTE": "CST Quotable Cost diverge do valor da estadia; conferir no PMS.",
         "PAGAMENTO_INCOMPATIVEL_GARANTIA": "Método de pagamento incompatível com garantia.",
         "CC_COM_PAGAMENTO_CASH": "Garantia CC mas pagamento em dinheiro.",
         "DUPLICIDADE_EXT_REF": "Referência externa duplicada; verificar duplicidade de reserva.",
-        "COMENTARIO_VALOR_DIVERGE": "Valor no comentário (TRF/DIARIA/R$) não confere com EFFECTIVE_RATE_AMOUNT/SHARE_AMOUNT; conferir no PMS.",
+        "COMENTARIO_VALOR_DIVERGE": "Valor no comentário (TRF/DIARIA/R$) diverge do valor da estadia; conferir no PMS.",
+        "CARTAO_EXPIRADO": "Data de validade ausente ou constando como EXP; conferir e inserir manualmente no PMS para evitar recusa na cobrança.",
+        "CARTAO_VALIDADE_PENDENTE": "Data de validade ausente ou constando como EXP; conferir e inserir manualmente no PMS para evitar recusa na cobrança.",
+        "MARKET_CODE_AUSENTE": "MARKET_CODE vazio; preencher no PMS.",
+        "DATA_ARRIVAL_INVALIDA": "Data de chegada em formato inválido.",
+        "DATA_DEPARTURE_INVALIDA": "Data de saída em formato inválido.",
+        "DEPARTURE_ANTES_ARRIVAL": "Data de saída anterior à chegada; corrigir datas.",
+        "MULTIPLOS_TRF_DIVERGENTES": "Múltiplos valores de TRF R$ no comentário; verificar valor correto.",
+        "RATE_SHARE_DIVERGENCIA": "EFFECTIVE_RATE × noites diverge de SHARE_AMOUNT; verificar tarifa.",
+        "BOOKING_SEM_COMENTARIO_COBRANCA": "Reserva Booking sem depósito em conta; ajustar os comentários inserindo o valor a ser cobrado no cartão que consta na reserva (ex: TRF R$ [valor] + TXS).",
     }
     return ACTIONS.get(code, "Verificar manualmente.")
