@@ -3,5 +3,5 @@ services:
   - type: web
     name: reservation-audit-engine
     runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: cd app && gunicorn --bind 0.0.0.0:$PORT app:app
+    buildCommand: pip install -r requirements.txt || pip install -r app/requirements.txt
+    startCommand: cd app && python -m gunicorn --bind 0.0.0.0:$PORT app:app

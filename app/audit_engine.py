@@ -22,6 +22,19 @@ KNOWN_MARKET_CODES = {
     "CMTG", "SMRF", "HOU", "GOV",
 }
 
+# Rate codes / empresas para seleção de template de comentário
+BOOKING_REFUNDABLE_RATES = {"OGBKBB"}
+BOOKING_NONREFUND_RATES = {"2D"}
+EXPEDIA_RATES = {"PGHCP1"}
+OMNIBEES_RATES = {"L4"}
+POINTS_HH_RATES = {"HHNSRR"}
+GROUP_RATES = {"GRXG3", "GRXG4", "GRXG5"}
+WEBBEDS_RATES = {"WH0"}
+HOTELBEDS_RATES = {"WH2", "WH3"}
+COOBRASTUR_RATES = {"WHC"}
+DESPEGAR_RATES = {"J5"}
+SPC_RATES = {"SPC"}
+
 VALID_GUARANTEE_CODES = {"CC", "CO", "CD", "WV", "6P", "CASH", "CHECKED IN"}
 
 PAYMENT_DIRECT_KEYWORDS = [
@@ -705,28 +718,118 @@ def parse_and_audit(xml_content, target_date=None):
 def _generate_ready_comment(r):
     """
     Gera o texto de comentário sugerido pronto para colar no Opera PMS
-    com base no canal, valor da estadia e histórico de reservas.
+    com base no canal, empresa, rate_code e valores da reserva.
+    Baseado na análise de 5.387 reservas de produção.
+    Retorna dict com chaves 'res' (Reservation) e 'inh' (In-house).
     """
     if not r:
         return ""
     val = r["share_amount"] if r.get("share_amount", 0) > 0 else r.get("effective_rate", 0)
     val_str = f"{val:,.2f}"
+    rate_str = f"{r.get('effective_rate', 0):,.2f}"
     channel = r.get("channel", "")
     comp = r.get("company_name", "")
+    comp_parsed = r.get("company_parsed", "")
     comments_txt = r.get("comments_text", "")
+    rc = r.get("rate_code", "")
+    mc = r.get("market_code", "")
+    cc_last4 = r.get("credit_card", "")[-4:] if r.get("credit_card") else ""
+    adults = r.get("adults", 1)
 
+    # --- 1. Pontos HH (HHNSRR) ---
+    if rc in POINTS_HH_RATES or "FULL POINTS" in comments_txt.upper():
+        return "RSV FULL POINTS // EXTRAS DIRETO"
+
+    # --- 2. Group/Conference ---
+    if channel == "Group/Conference" or r.get("origin") == "GC":
+        tipo = "DPL" if adults >= 2 else "SGL"
+        block = r.get("block_code", "")
+        pm_ref = f"PM {block}" if block else "PM DO GRUPO"
+        return (f"DIÁRIAS {tipo}S PAGAS PELA EMPRESA NA {pm_ref} "
+                f"// CONSUMOS EXTRAS SÃO PGTO DIRETO PELOS HÓSPEDES "
+                f"| TRF {tipo} R$ {rate_str} + 5% iss")
+
+    # --- 3. Booking.com ---
     if channel == "Booking.com":
-        has_non_refundable = any(k in comments_txt.upper() for k in ["REEMBOLSAVEL", "ANTECIPADO", "NON REF"])
-        if has_non_refundable:
-            return f"TARIFA NAO REEMBOLSAVEL // PAG ANTECIPADO DE DIARIAS // EXTRAS PAG DIRETO | TRF R$ {val_str} + TXS"
+        is_nonrefund = (
+            rc in BOOKING_NONREFUND_RATES
+            or mc == "DISC"
+            or any(k in comments_txt.upper() for k in [
+                "REEMBOLSAVEL", "REEMBOLSÁVEL", "ANTECIPADO", "NON REF",
+            ])
+        )
+        if is_nonrefund:
+            return (f"TARIFA NAO REEMBOLSAVEL // PAG ANTECIPADO DE DIARIAS "
+                    f"// EXTRAS PAG DIRETO | TRF R$ {val_str} + TXS")
         return f"PGMTO DIRETO + EXTRAS | TRF R$ {val_str} + TXS"
 
-    if channel in ("Expedia Group", "OTA (TA)", "Omnibees"):
-        return f"TARIFA CONF // FATURAR DIARIAS + TAXAS // EXTRAS PAG DIRETO | TRF R$ {val_str} + TXS"
+    # --- 4. Expedia Group / Amex ---
+    if channel == "Expedia Group":
+        return (f"TARIFA CONF // FATURAR DIARIAS + TAXAS "
+                f"// EXTRAS PAG DIRETO | TRF R$ {val_str} + TXS")
 
-    if comp and (r.get("comp_house") == "C" or any(k in comments_txt.upper() for k in ["FATURAR", "FATUARAR"])):
-        return f"FATURAR DIARIAS E TAXAS PARA {comp} // EXTRAS DIRETO"
+    # --- 5. Omnibees / 99 Tecnologia ---
+    if channel == "Omnibees" or rc in OMNIBEES_RATES:
+        return f"PGMTO DIRETO + EXTRAS | TRF R$ {val_str} + TXS"
 
+    # --- 6. Asia OTA (Agoda, Ctrip) ---
+    if channel == "Asia OTA":
+        if cc_last4:
+            return (f"TARIFA CONF / DEBITAR DIARIAS + TAXAS NO CC FINAL {cc_last4} "
+                    f"// EXTRAS PAG DIRETO | Diaria: R$ {rate_str} + Taxas")
+        return (f"TARIFA CONF // FATURAR DIARIAS + TAXAS "
+                f"// EXTRAS PAG DIRETO | Diaria: R$ {rate_str} + Taxas")
+
+    # --- 7. Despegar ---
+    if channel == "Despegar" or rc in DESPEGAR_RATES:
+        if cc_last4:
+            return (f"TARIFA CONF / DEBITAR DIARIAS + TAXAS NO CC FINAL {cc_last4} "
+                    f"// EXTRAS PAG DIRETO | Diaria: R$ {rate_str} + Taxas")
+        return (f"TARIFA CONF // FATURAR DIARIAS + TAXAS "
+                f"// EXTRAS PAG DIRETO | TRF R$ {val_str} + TXS")
+
+    # --- 8. Wholesaler: WEBBEDS (WH0, IT) — débito no CC ---
+    if "WEBBEDS" in comp.upper() or rc in WEBBEDS_RATES:
+        if cc_last4:
+            return (f"TARIFA CONF / DEBITAR DIARIAS + TAXAS NO CC FINAL {cc_last4} "
+                    f"// EXTRAS PAG DIRETO | Diaria: R$ {rate_str} + Taxas")
+        return (f"TARIFA CONF // FATURAR DIARIAS + TAXAS "
+                f"// EXTRAS PAG DIRETO | Diaria: R$ {rate_str} + Taxas")
+
+    # --- 9. Wholesaler: HOTELBEDS (WH2/WH3, IT) — faturar ---
+    if "HOTELBEDS" in comp.upper() or rc in HOTELBEDS_RATES:
+        return (f"TARIFA CONF // FATURAR DIARIAS + TAXAS "
+                f"// EXTRAS PAG DIRETO | TRF R$ {val_str} + TXS")
+
+    # --- 10. Wholesaler: COOBRASTUR (WHC, IT) — ISS explícito ---
+    if "COOBRASTUR" in comp.upper() or rc in COOBRASTUR_RATES:
+        return (f"TARIFA CONF // FATURAR DIARIAS + 5% DE ISS "
+                f"// EXTRAS PAG DIRETO | DIARIA: R$ {rate_str} + 5% DE ISS")
+
+    # --- 11. Wholesaler genérico (IT) ---
+    if mc == "IT" and comp:
+        return (f"TARIFA CONF // FATURAR DIARIAS + TAXAS "
+                f"// EXTRAS PAG DIRETO | TRF R$ {val_str} + TXS")
+
+    # --- 12. Corporativo com empresa (CIBMS0, CNR) ---
+    if (rc in CORPORATE_RATE_CODES or mc in CORPORATE_MARKET_CODES) and comp:
+        return f"PGMTO DIRETO + EXTRAS | TRF R$ {val_str} + TXS"
+
+    # --- 13. OTA (TA) genérico ---
+    if channel == "OTA (TA)":
+        return f"PGMTO DIRETO + EXTRAS | TRF R$ {val_str} + TXS"
+
+    # --- 14. Company billing (com empresa + indicação de faturar) ---
+    if comp and (r.get("comp_house") == "C" or any(
+        k in comments_txt.upper() for k in ["FATURAR", "FATUARAR"]
+    )):
+        return f"FATURAR DIARIAS E TAXAS PARA {comp_parsed or comp} // EXTRAS DIRETO"
+
+    # --- 15. SPC tarifa especial ---
+    if rc in SPC_RATES:
+        return f"PGMTO DIRETO + EXTRAS | TRF R$ {val_str} + TXS"
+
+    # --- 16. Fallback genérico ---
     if val > 0:
         return f"PGMTO DIRETO + EXTRAS | TRF R$ {val_str} + TXS"
 

@@ -4,6 +4,6 @@ services:
     runtime: python
     # Raiz do repositório onde está o código (ajuste se o app estiver na pasta app/)
     rootDir: app
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --bind 0.0.0.0:$PORT app:app
+    buildCommand: pip install -r requirements.txt || pip install -r ../requirements.txt
+    startCommand: python -m gunicorn --bind 0.0.0.0:$PORT app:app
     # PORT é definido automaticamente pelo Render
