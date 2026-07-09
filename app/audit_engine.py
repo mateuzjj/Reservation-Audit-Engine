@@ -344,12 +344,6 @@ def _r011_cc_sem_cartao(r):
             "CREDIT_CARD_NUMBER": "(vazio)",
         })
 
-def _r013_quarto_nao_atribuido(r):
-    if not r["room_no"]:
-        return ("QUARTO_NAO_ATRIBUIDO", "medium", {
-            "ROOM_NO": "(vazio)",
-            "ARRIVAL": r["arrival_raw"],
-        })
 
 def _r015_cst_divergente(r):
     match = re.search(r"CST:\s*Quotable Cost\s*:\s*BRL\s*([\d.,]+)", r["comments_text"])
@@ -515,7 +509,6 @@ ALL_RULES = [
     _r010_tarifa_zero,
     _r011_cc_sem_cartao,
     _r012_ota_sem_ext_ref,
-    _r013_quarto_nao_atribuido,
     _r015_cst_divergente,
     _r016_payment_method_vs_guarantee,
     _r017_comentario_valor_diverge_reserva,
@@ -882,7 +875,6 @@ def _suggested_action(code, r=None):
         "TARIFA_ZERO_SEM_JUSTIFICATIVA": "Tarifa zero sem justificativa; verificar.",
         "CC_SEM_NUMERO_CARTAO": "Garantia CC sem número de cartão.",
         "OTA_SEM_EXT_REF": "Reserva OTA sem referência externa; incluir para conciliação.",
-        "QUARTO_NAO_ATRIBUIDO": "Atribuir quarto antes do check-in.",
         "CST_DIVERGENTE": "CST Quotable Cost diverge do valor da estadia; conferir no PMS.",
         "PAGAMENTO_INCOMPATIVEL_GARANTIA": "Método de pagamento incompatível com garantia.",
         "CC_COM_PAGAMENTO_CASH": "Garantia CC mas pagamento em dinheiro.",
