@@ -733,12 +733,19 @@ def _generate_ready_comment(r):
     if rc in POINTS_HH_RATES or "FULL POINTS" in comments_txt.upper():
         return "RSV FULL POINTS // EXTRAS DIRETO"
 
-    # --- 2. Reserva com depósito / balance (pagamento antecipado) ---
+    # --- 2. Booking.com ---
+    if channel == "Booking.com":
+        if r.get("deposit_paid", 0) > 0:
+            return (f"TARIFA NAO REEMBOLSAVEL // PAG ANTECIPADO DE DIARIAS "
+                    f"// EXTRAS PAG DIRETO | TRF R$ {val_str} + TXS")
+        return f"PGMTO DIRETO + EXTRAS | TRF R$ {val_str} + TXS"
+
+    # --- 3. Reserva com depósito / balance (pagamento antecipado em outros canais) ---
     if r.get("deposit_paid", 0) > 0:
         return (f"TARIFA NAO REEMBOLSAVEL // PAG ANTECIPADO DE DIARIAS "
                 f"// EXTRAS PAG DIRETO | TRF R$ {val_str} + TXS")
 
-    # --- 3. Group/Conference ---
+    # --- 4. Group/Conference ---
     if channel == "Group/Conference" or r.get("origin") == "GC":
         tipo = "DPL" if adults >= 2 else "SGL"
         block = r.get("block_code", "")
@@ -746,20 +753,6 @@ def _generate_ready_comment(r):
         return (f"DIÁRIAS {tipo}S PAGAS PELA EMPRESA NA {pm_ref} "
                 f"// CONSUMOS EXTRAS SÃO PGTO DIRETO PELOS HÓSPEDES "
                 f"| TRF {tipo} R$ {rate_str} + 5% iss")
-
-    # --- 3. Booking.com ---
-    if channel == "Booking.com":
-        is_nonrefund = (
-            rc in BOOKING_NONREFUND_RATES
-            or mc == "DISC"
-            or any(k in comments_txt.upper() for k in [
-                "REEMBOLSAVEL", "REEMBOLSÁVEL", "ANTECIPADO", "NON REF",
-            ])
-        )
-        if is_nonrefund:
-            return (f"TARIFA NAO REEMBOLSAVEL // PAG ANTECIPADO DE DIARIAS "
-                    f"// EXTRAS PAG DIRETO | TRF R$ {val_str} + TXS")
-        return f"PGMTO DIRETO + EXTRAS | TRF R$ {val_str} + TXS"
 
     # --- 4. Expedia Group / Amex ---
     if channel == "Expedia Group":
