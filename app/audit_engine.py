@@ -34,6 +34,7 @@ HOTELBEDS_RATES = {"WH2", "WH3"}
 COOBRASTUR_RATES = {"WHC"}
 DESPEGAR_RATES = {"J5"}
 SPC_RATES = {"SPC"}
+OD_CC_DEBIT_RATES = {"OD25BX", "ODBB23"}
 
 # ---------------------------------------------------------------------------
 # Mapeamento COMPANY → ROUTING DESTINATION (produção 2026)
@@ -63,12 +64,13 @@ COMPANY_ROUTING_MAP = {
     "agoda company": "Agoda Company Pt Ltd",
     "beijing kuaishou": "Shanghai Ctrip Hongruiinternational Trav",
     "tencent": "Tencent",
-    # === Booking ===
-    "booking com": "Booking.Com Bv",
-    "booking.com": "Booking.Com Bv",
     # === Priceline / Delta ===
     "priceline direct": "Priceline.Com Llc",
     "delta vac": "Delta Vacations Llc",
+    # === OTAs / Wholesalers com debito CC + ISS ===
+    "olympia viaggi": "Olympia Viaggi S P",
+    "british airways": "British Airways",
+    "world 2 meet": "World 2 Meet Direct",
     # === Operadoras Nacionais ===
     "bancorbras": "BANCORBRAS VIAGENS E TURISMO SA",
     "coobrastur": "COOBRASTUR VIAGENS E TURISMO",
@@ -901,6 +903,16 @@ def _generate_ready_comment(r):
             return (f"TARIFA CONF / DEBITAR DIARIAS + TAXAS NO CC FINAL {cc_last4} "
                     f"// EXTRAS PAG DIRETO | Diaria: R$ {rate_str} + Taxas")
         return (f"TARIFA CONF // FATURAR DIARIAS + TAXAS "
+                f"// EXTRAS PAG DIRETO | TRF R$ {val_str} + TXS")
+
+    # --- 7b. OTAs/Wholesalers com debito CC + ISS (Olympia Viaggi, British Airways, World 2 Meet) ---
+    comp_upper = comp.upper()
+    if ("OLYMPIA VIAGGI" in comp_upper or "BRITISH AIRWAYS" in comp_upper
+            or "WORLD 2 MEET" in comp_upper or rc in OD_CC_DEBIT_RATES):
+        if cc_last4:
+            return (f"TARIFA CONF / DEBITAR DIARIAS + ISS NO CC FINAL {cc_last4} "
+                    f"// EXTRAS PAG DIRETO | TRF R$ {val_str} + TXS")
+        return (f"TARIFA CONF // FATURAR DIARIAS + ISS "
                 f"// EXTRAS PAG DIRETO | TRF R$ {val_str} + TXS")
 
     # --- 8. Wholesaler: WEBBEDS (WH0, IT) — débito no CC ---
