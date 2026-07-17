@@ -35,6 +35,99 @@ COOBRASTUR_RATES = {"WHC"}
 DESPEGAR_RATES = {"J5"}
 SPC_RATES = {"SPC"}
 
+# ---------------------------------------------------------------------------
+# Mapeamento COMPANY → ROUTING DESTINATION (produção 2026)
+# Chave: substring do COMPANY_NAME (lower); Valor: nome do perfil de routing no Opera
+# Extraído de 2.283 reservas com routing em res_detail4426595.xml
+# ---------------------------------------------------------------------------
+COMPANY_ROUTING_MAP = {
+    # === OTAs / Expedia Group ===
+    "amex online thc": "Expedia Incorporated",
+    "hotels com direct": "Expedia Incorporated",
+    "expedia affiliate": "Expedia Incorporated",
+    "expedia com direct": "Expedia Incorporated",
+    "wotif via ean": "Expedia Incorporated",
+    # === Wholesalers ===
+    "hotelbeds": "HOTELBEDS",
+    "hotelbeds direct": "Hotelbeds Direct Connect",
+    "webbeds": "WEBBEDS",
+    "webbeds  du": "WEBBEDS  DU",
+    "webbeds b2b": "Webbeds B2b Direct Connect",
+    "sunhotels": "SUNHOTELS",
+    # === OTAs Latam ===
+    "despegar": "DESPEGAR.COM",
+    "despegar direct": "DESPEGAR.COM",
+    # === OTAs Asia ===
+    "ctrip direct": "Ctrip Direct Connect",
+    "agoda direct": "Agoda Company Pt Ltd",
+    "agoda company": "Agoda Company Pt Ltd",
+    "beijing kuaishou": "Shanghai Ctrip Hongruiinternational Trav",
+    "tencent": "Tencent",
+    # === Booking ===
+    "booking com": "Booking.Com Bv",
+    "booking.com": "Booking.Com Bv",
+    # === Priceline / Delta ===
+    "priceline direct": "Priceline.Com Llc",
+    "delta vac": "Delta Vacations Llc",
+    # === Operadoras Nacionais ===
+    "bancorbras": "BANCORBRAS VIAGENS E TURISMO SA",
+    "coobrastur": "COOBRASTUR VIAGENS E TURISMO",
+    "abreu online": "ABREU ONLINE",
+    "rdc viagens": "RDC FERIAS VIAGENS E TURISMO",
+    "smiles viagens": "Smiles Viagens e Turismo",
+    "bwt operadora": "BWT OPERADORA",
+    "brt operadora": "BRT OPERADORA",
+    "orinter": "ORINTER VIAGENS E TURISMO",
+    "trend viagens": "Trend Viagens Operadora",
+    "travelconcept": "TRAVELCONCEPT VIAGENS",
+    "tourmed": "TOURMED VIAGENS E TURISMO",
+    "rebobinights": "REBOBINIGHTS LTDA",
+    "zarpo viagens": "Zarpo Viagens SA",
+    "cvc brasil": "CVC BRASIL OPERADORA",
+    "reservia befly": "RESERVIA BY BEFLY",
+    "teresa perez": "TERESA PEREZ VIAGENS",
+    "bestbuy hotel": "BESTBUY HOTEL",
+    "ehtl": "EHTL",
+    "azul viagens": "Azul Viagens Direct",
+    "price travel": "Price Travel Direct Connect",
+    "select solucoes": "SELECT SOLUCOES",
+    "w2m": "W2M",
+    "tbo holidays": "TBO Holidays Dynamic",
+    "tbo direct": "Tbo Direct Connect",
+    # === Corporativos ===
+    "mckinsey": "MCKINSEY E COMPANY",
+    "british american": "British American Tobacco",
+    "torre comunicacao": "BANCORBRAS VIAGENS E TURISMO SA",
+    "mattos filho": "Mattos Filho",
+    "navan group": "Navan Inc.",
+    "openai": "Navan Inc.",
+    "iron fit": "Iron Fit",
+    "iron trainers": "Iron Trainers do Brasil",
+    "adidas": "Adidas AE",
+    "99 tecnologia": "99 Tecnologia Ltda",
+    "emirates": "EMIRATES",
+    "embu s a": "Embu S A Engenharia",
+    "atlantic nickel": "ATLANTIC NICKEL MINERACAO",
+    "souza cruz": "Souza Cruz LTDA",
+    "btg pactual": "BANCO BTG PACTUAL S.A.",
+    "banco btg": "BANCO BTG PACTUAL S.A.",
+    "pequod": "PEQUOD INVESTIMENTOS",
+    "siemens": "Hrs Gmbh",
+    "manhattan associat": "Manhattan Associates",
+    "otb sports": "OTB Sports",
+    "car law": "CAR LAW",
+    # === TMC (Travel Management Company) ===
+    "tmc group": "Maringa Turismo",
+    "travelperk": "Travelperk",
+    # === Travel Agents ===
+    "hrs gmbh": "Hrs Gmbh",
+    "global travel coll": "Global Travel Collection",
+    "perk platform": "Perk Platform Slu",
+    "aci blueteam": "Aci Blueteam Spa",
+    "flytour franquias": "Flytour Franquias Sa",
+    "century travel": "CENTURY TRAVEL",
+}
+
 VALID_GUARANTEE_CODES = {"CC", "CO", "CD", "WV", "6P", "CASH", "CHECKED IN"}
 
 PAYMENT_DIRECT_KEYWORDS = [
@@ -481,6 +574,27 @@ def _r024_rate_share_divergencia(r):
                 "diferenca": f"{diff:.2f}",
             })
 
+def _r026_routing_ausente(r):
+    """
+    Verifica se a empresa mapeada deveria ter routing mas COUNT_ROUTING = 0.
+    Sinaliza a ausência e indica o routing correto para inserir no Opera.
+    """
+    if r.get("count_routing", 0) > 0:
+        return None  # Já tem routing
+    company_raw = (r.get("company_name", "") or "").lower()
+    if not company_raw:
+        return None
+    # Procurar match no mapeamento
+    for key, routing_dest in COMPANY_ROUTING_MAP.items():
+        if key in company_raw:
+            return ("ROUTING_AUSENTE", "high", {
+                "COMPANY_NAME": r.get("company_parsed", "") or r.get("company_name", ""),
+                "ROUTING_ESPERADO": routing_dest,
+                "COUNT_ROUTING": str(r.get("count_routing", 0)),
+            })
+    return None
+
+
 def _r025_booking_sem_comentario_cobranca(r):
     if r["channel"] == "Booking.com" and r["deposit_paid"] == 0:
         has_charging = (
@@ -518,6 +632,7 @@ ALL_RULES = [
     _r022_multiplos_trf_divergentes,
     _r024_rate_share_divergencia,
     _r025_booking_sem_comentario_cobranca,
+    _r026_routing_ausente,
 ]
 
 
@@ -616,6 +731,7 @@ def parse_and_audit(xml_content, target_date=None):
             "block_code": _text(resv, "BLOCK_CODE"),
             "group_id": _text(resv, "GROUP_ID"),
             "routing_text": routing_text,
+            "count_routing": _int_val(resv, "COUNT_ROUTING"),
         }
 
         r["channel"] = _detect_channel(
@@ -654,6 +770,14 @@ def parse_and_audit(xml_content, target_date=None):
         r["suggested_actions"] = actions
         r["suggested_opera_comment"] = _generate_ready_comment(r)
         r["issue_codes"] = [i["code"] for i in issues]
+
+        # Populate routing_expected for companies that should have routing
+        r["routing_expected"] = ""
+        company_lower = (r.get("company_name", "") or "").lower()
+        for key, routing_dest in COMPANY_ROUTING_MAP.items():
+            if key in company_lower:
+                r["routing_expected"] = routing_dest
+                break
 
         all_records.append(r)
 
@@ -856,6 +980,15 @@ def _suggested_action(code, r=None):
     if code == "DUPLICIDADE_EXT_REF":
         ref = r.get("external_reference", "") if r else ""
         return f"Referência externa {ref} duplicada em outra reserva; conferir duplicidade no PMS."
+    if code == "ROUTING_AUSENTE":
+        routing_dest = ""
+        if r:
+            company_lower = (r.get("company_name", "") or "").lower()
+            for key, dest in COMPANY_ROUTING_MAP.items():
+                if key in company_lower:
+                    routing_dest = dest
+                    break
+        return f"Inserir routing no Opera PMS para o perfil: {routing_dest}"
 
     ACTIONS = {
         "RATE_CODE_AUSENTE": "Preencher RATE_CODE no PMS.",
@@ -887,5 +1020,6 @@ def _suggested_action(code, r=None):
         "MULTIPLOS_TRF_DIVERGENTES": "Múltiplos valores de TRF R$ no comentário; verificar valor correto.",
         "RATE_SHARE_DIVERGENCIA": "EFFECTIVE_RATE × noites diverge de SHARE_AMOUNT; verificar tarifa.",
         "BOOKING_SEM_COMENTARIO_COBRANCA": "Reserva Booking sem depósito em conta; ajustar os comentários inserindo o valor a ser cobrado no cartão que consta na reserva (ex: TRF R$ [valor] + TXS).",
+        "ROUTING_AUSENTE": "Empresa mapeada requer routing mas COUNT_ROUTING=0; inserir routing no Opera PMS.",
     }
     return ACTIONS.get(code, "Verificar manualmente.")
